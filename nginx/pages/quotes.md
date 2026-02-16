@@ -735,6 +735,7 @@ ORDER BY symbol, ts;
 ### Grafana (ClickHouse datasource)
 
 ```sql
+-- OHLC свечи (панель Candlestick)
 SELECT
     ts AS time,
     argMinMerge(open)  AS open,
@@ -748,10 +749,28 @@ WHERE tf = ${timeframe:sqlstring}
   AND $__timeFilter(ts)
 GROUP BY ts
 ORDER BY ts
+
+-- Bid / Ask тики (панель Timeseries, два запроса)
+SELECT ts AS time, 'bid' AS metric, bid AS value
+FROM quotes FINAL
+WHERE symbol = ${symbol:sqlstring} AND $__timeFilter(ts)
+ORDER BY ts
+
+SELECT ts AS time, 'ask' AS metric, ask AS value
+FROM quotes FINAL
+WHERE symbol = ${symbol:sqlstring} AND $__timeFilter(ts)
+ORDER BY ts
+
+-- Spread (панель Timeseries)
+SELECT ts AS time, ask - bid AS spread
+FROM quotes FINAL
+WHERE symbol = ${symbol:sqlstring} AND $__timeFilter(ts)
+ORDER BY ts
 ```
 
 > `${timeframe:sqlstring}` и `${symbol:sqlstring}` — переменные Grafana dashboard.
 > `$__timeFilter(ts)` — макрос Grafana для фильтра по выбранному временному диапазону.
+> Запросы к `quotes` используют `FINAL` для дедупликации (`ReplacingMergeTree`).
 
 ### Статистика
 
