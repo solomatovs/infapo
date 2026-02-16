@@ -1,0 +1,59 @@
+services:
+  redisinsight:
+    image: redis/redisinsight:3.0.2
+    container_name: redisinsight
+    hostname: redisinsight
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # tmpfs:
+    #   - /tmp:size=256M,noexec,nosuid,nodev
+
+    # No external ports - accessed via nginx reverse proxy
+
+    volumes:
+      - redisinsight-data:/data
+
+    env_file:
+      - ./config/redisinsight.env
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5540/boroda/redis/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - docker
+
+volumes:
+  redisinsight-data:
+    name: redisinsight-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/redisinsight-data
+
+networks:
+  docker:
+    external: true

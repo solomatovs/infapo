@@ -1,0 +1,569 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 38,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "comment": "Process lifecycle - execve: container init, exit/exit_group: normal shutdown",
+      "names": [
+        "execve",
+        "execveat",
+        "exit",
+        "exit_group"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Go runtime goroutines - clone/clone3: Go spawns OS threads for goroutines, fork/vfork: rare but needed for exec",
+      "names": [
+        "clone",
+        "clone3",
+        "fork",
+        "vfork"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Go runtime scheduling - futex: all Go mutex/sync primitives use this, sched_yield: cooperative scheduling, sched_getaffinity: GOMAXPROCS auto-detection",
+      "names": [
+        "futex",
+        "get_robust_list",
+        "set_robust_list",
+        "sched_yield",
+        "sched_getaffinity",
+        "sched_getparam",
+        "sched_getscheduler",
+        "sched_setscheduler"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Go runtime memory management - mmap/munmap: heap allocation, mprotect: GC write barriers, madvise: MADV_DONTNEED for GC, brk: legacy allocator",
+      "names": [
+        "mmap",
+        "munmap",
+        "mprotect",
+        "madvise",
+        "brk",
+        "mremap"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Go signal handling - sigaltstack: Go handles signals on goroutine stacks, rt_sigaction/rt_sigprocmask: signal setup, rt_sigreturn: return from signal handler, tgkill: send signals to threads",
+      "names": [
+        "sigaltstack",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "rt_sigpending",
+        "rt_sigsuspend",
+        "rt_sigtimedwait",
+        "kill",
+        "tkill",
+        "tgkill"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Go netpoller (epoll) - epoll_create1/epoll_ctl/epoll_wait/epoll_pwait: Go runtime uses epoll for ALL network I/O, Grafana's HTTP server depends on this",
+      "names": [
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "epoll_pwait2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Network I/O - socket/bind/listen/accept: Grafana HTTP server on :3000, connect: outbound connections to data sources, Prometheus, etc., sendto/recvfrom: UDP/TCP I/O, setsockopt: TCP_NODELAY, SO_REUSEADDR, etc.",
+      "names": [
+        "socket",
+        "socketpair",
+        "bind",
+        "listen",
+        "accept",
+        "accept4",
+        "connect",
+        "getsockname",
+        "getpeername",
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "sendmmsg",
+        "recvmmsg",
+        "shutdown",
+        "setsockopt",
+        "getsockopt"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File I/O (modern openat-based) - openat/openat2: Go 1.11+ uses openat instead of open, Grafana reads config files, plugins, dashboards, readlinkat: resolve symlinks, fstatat: stat files",
+      "names": [
+        "openat",
+        "openat2",
+        "close",
+        "read",
+        "readv",
+        "pread64",
+        "write",
+        "writev",
+        "pwrite64",
+        "lseek",
+        "fstat",
+        "fstatat",
+        "newfstatat",
+        "readlinkat",
+        "fstatfs",
+        "fsync",
+        "fdatasync",
+        "ftruncate",
+        "fchmod",
+        "fchown",
+        "flock",
+        "fcntl",
+        "dup",
+        "dup2",
+        "dup3"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Directory operations - getdents64: read directory entries for plugin discovery, dashboard scanning, mkdirat: create directories for data/logs (if needed)",
+      "names": [
+        "getdents",
+        "getdents64",
+        "mkdirat",
+        "unlinkat",
+        "renameat",
+        "renameat2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Legacy file I/O - open/stat/lstat/statx: older and modern syscalls, access: check file permissions",
+      "names": [
+        "open",
+        "creat",
+        "stat",
+        "lstat",
+        "statx",
+        "access",
+        "faccessat",
+        "faccessat2",
+        "readlink",
+        "unlink",
+        "rmdir",
+        "rename",
+        "mkdir",
+        "chmod",
+        "chown",
+        "lchown"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Pipes and eventfd - pipe2: Go runtime uses pipes for internal signaling, eventfd2: async notification mechanism",
+      "names": [
+        "pipe",
+        "pipe2",
+        "eventfd",
+        "eventfd2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process/thread info - getpid/gettid: process identification, getuid/getgid: permission checks, getrusage: resource monitoring for Grafana metrics",
+      "names": [
+        "getpid",
+        "gettid",
+        "getppid",
+        "getpgrp",
+        "getpgid",
+        "setpgid",
+        "getuid",
+        "geteuid",
+        "getgid",
+        "getegid",
+        "getgroups",
+        "setuid",
+        "setgid",
+        "setgroups",
+        "setreuid",
+        "setregid",
+        "setresuid",
+        "setresgid",
+        "getresuid",
+        "getresgid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Time operations - clock_gettime: timestamps for logs/metrics, nanosleep: time.Sleep() in Go, gettimeofday: legacy time functions",
+      "names": [
+        "clock_gettime",
+        "clock_getres",
+        "clock_nanosleep",
+        "gettimeofday",
+        "nanosleep",
+        "time"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Timers - timerfd for Go time.After(), setitimer for profiling, alarm for timeouts",
+      "names": [
+        "timer_create",
+        "timer_settime",
+        "timer_gettime",
+        "timer_delete",
+        "timerfd_create",
+        "timerfd_settime",
+        "timerfd_gettime",
+        "setitimer",
+        "getitimer",
+        "alarm"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Randomness - getrandom: crypto/rand for TLS, session tokens, CSRF protection in Grafana",
+      "names": [
+        "getrandom"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "I/O multiplexing - poll/select: legacy I/O multiplexing, some C libraries still use these, pselect6: signal-safe select",
+      "names": [
+        "poll",
+        "ppoll",
+        "select",
+        "pselect6"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process resource limits - getrlimit/setrlimit: manage file descriptor limits, prlimit64: modern rlimit interface",
+      "names": [
+        "getrlimit",
+        "setrlimit",
+        "prlimit64"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Thread-local storage - arch_prctl: x86_64 TLS setup for Go threads, set_tid_address: thread exit notification",
+      "names": [
+        "arch_prctl",
+        "set_tid_address",
+        "set_thread_area",
+        "get_thread_area"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "prctl operations - prctl: Go runtime uses PR_SET_NAME for thread naming, PR_SET_PDEATHSIG for cleanup",
+      "names": [
+        "prctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Inotify - inotify for file watching (config reload, plugin hot-reload in Grafana)",
+      "names": [
+        "inotify_init",
+        "inotify_init1",
+        "inotify_add_watch",
+        "inotify_rm_watch"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "uname - uname: OS detection for telemetry, compatibility checks",
+      "names": [
+        "uname",
+        "sysinfo"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Filesystem attributes - statfs: check disk space for Grafana data directory, getxattr: read extended attributes (SELinux contexts, etc.)",
+      "names": [
+        "statfs",
+        "fstatfs",
+        "ustat",
+        "getxattr",
+        "lgetxattr",
+        "fgetxattr",
+        "listxattr",
+        "llistxattr",
+        "flistxattr"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "wait operations - wait4/waitpid: wait for child processes (if Grafana spawns any external processes)",
+      "names": [
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "umask - umask: set file creation mask for proper permissions",
+      "names": [
+        "umask"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "getcwd - getcwd: get current working directory, used by Go runtime and file path resolution",
+      "names": [
+        "getcwd",
+        "chdir",
+        "fchdir"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "capset/capget - capset/capget: capability management, needed if Grafana drops privileges",
+      "names": [
+        "capget",
+        "capset"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "DISABLED: mount/umount — Grafana does not need to mount filesystems",
+      "names": [
+        "mount",
+        "umount",
+        "umount2",
+        "pivot_root",
+        "chroot"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: ptrace — Debugging/introspection not needed in production. Security risk for container escape",
+      "names": [
+        "ptrace",
+        "process_vm_readv",
+        "process_vm_writev"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: io_uring — Go runtime does not use io_uring. Multiple kernel CVEs (CVE-2023-2598, CVE-2024-0582). Not needed for Grafana",
+      "names": [
+        "io_uring_setup",
+        "io_uring_enter",
+        "io_uring_register"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: clock manipulation — adjtimex/clock_settime/settimeofday: Grafana should not modify system time. Read-only time access is sufficient",
+      "names": [
+        "adjtimex",
+        "clock_adjtime",
+        "clock_settime",
+        "settimeofday",
+        "stime"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: personality with UNAME26 — Used to bypass security checks. No legitimate use in Grafana",
+      "names": [],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 131072,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "comment": "DISABLED: modify_ldt — x86 segment manipulation, legacy feature, security risk",
+      "names": [
+        "modify_ldt"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: POSIX message queues — mq_* syscalls not used by Go runtime or Grafana",
+      "names": [
+        "mq_open",
+        "mq_timedsend",
+        "mq_timedreceive",
+        "mq_notify",
+        "mq_getsetattr",
+        "mq_unlink"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: fanotify — Filesystem event monitoring not needed, inotify is sufficient",
+      "names": [
+        "fanotify_init",
+        "fanotify_mark"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: process_mrelease — OOM killer optimization, not needed in containerized Grafana",
+      "names": [
+        "process_mrelease"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: system reboot/shutdown — kexec_load/kexec_file_load/reboot/swapon/swapoff: Grafana should never reboot the system",
+      "names": [
+        "kexec_load",
+        "kexec_file_load",
+        "reboot",
+        "swapon",
+        "swapoff"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: kernel modules — init_module/finit_module/delete_module: Grafana does not load kernel modules",
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: BPF — bpf: eBPF is a kernel programming interface. Grafana does not use BPF. Major security risk",
+      "names": [
+        "bpf"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: userfaultfd — Userspace page fault handling, not used by Go. Known container escape vector",
+      "names": [
+        "userfaultfd"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: keyring operations — add_key/request_key/keyctl: Kernel keyring not used by Grafana",
+      "names": [
+        "add_key",
+        "request_key",
+        "keyctl"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: perf_event_open — Performance monitoring/profiling. Not needed in production Grafana",
+      "names": [
+        "perf_event_open"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: quotactl — Filesystem quota management not needed in container",
+      "names": [
+        "quotactl"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: lookup_dcookie — oprofile support, not used",
+      "names": [
+        "lookup_dcookie"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: kcmp — Compare kernel objects between processes, debugging tool, not needed",
+      "names": [
+        "kcmp"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: name_to_handle_at/open_by_handle_at — NFS file handle operations, not used in containerized Grafana",
+      "names": [
+        "name_to_handle_at",
+        "open_by_handle_at"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: acct — Process accounting, not needed",
+      "names": [
+        "acct"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: nfsservctl — NFS server control, not applicable",
+      "names": [
+        "nfsservctl"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: seccomp — Grafana should not modify its own seccomp policy at runtime",
+      "names": [
+        "seccomp"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: vmsplice/tee/splice — Advanced pipe operations. Rare use, potential security issues",
+      "names": [
+        "vmsplice",
+        "tee",
+        "splice"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: remap_file_pages — Deprecated in kernel, not used by Go",
+      "names": [
+        "remap_file_pages"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: mbind/set_mempolicy/get_mempolicy — NUMA memory policy. Not needed in typical containerized Grafana",
+      "names": [
+        "mbind",
+        "set_mempolicy",
+        "get_mempolicy",
+        "migrate_pages",
+        "move_pages"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}

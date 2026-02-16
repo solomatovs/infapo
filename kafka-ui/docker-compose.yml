@@ -1,0 +1,39 @@
+services:
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    hostname: kafka-ui
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # No external ports - accessed via nginx reverse proxy
+
+    volumes:
+      - ./config/kafka-ui.yml:/etc/kafkaui/config.yml:ro
+
+    environment:
+      SPRING_CONFIG_ADDITIONAL-LOCATION: /etc/kafkaui/config.yml
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/boroda/kafka-ui/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - docker
+
+networks:
+  docker:
+    external: true

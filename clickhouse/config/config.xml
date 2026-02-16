@@ -1,0 +1,216 @@
+<?xml version="1.0"?>
+<!--
+    ClickHouse Server Configuration
+    ===============================
+    Main server configuration file for ClickHouse.
+    Place this file at /etc/clickhouse-server/config.xml
+
+    Documentation: https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings
+-->
+<clickhouse>
+
+    <!-- ========================== -->
+    <!-- Network and Listen Settings -->
+    <!-- ========================== -->
+
+    <!-- Listen on all network interfaces. Use 127.0.0.1 to restrict to localhost only. -->
+    <listen_host>0.0.0.0</listen_host>
+
+    <!-- HTTP interface port (used by clients, web UI, JDBC/ODBC drivers, etc.) -->
+    <http_port>8123</http_port>
+
+    <!-- Native TCP protocol port (used by clickhouse-client, inter-server communication, etc.) -->
+    <tcp_port>9000</tcp_port>
+
+    <!-- Inter-server HTTP port for data replication between replicas -->
+    <interserver_http_port>9009</interserver_http_port>
+
+    <!-- ========================== -->
+    <!-- TLS/SSL Encrypted Ports    -->
+    <!-- ========================== -->
+    <!-- Uncomment the sections below to enable encrypted connections.
+         Make sure the certificate and key files exist at the specified paths.
+         You can generate a self-signed certificate for testing with:
+           openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+             -keyout /etc/clickhouse-server/certs/server.key \
+             -out /etc/clickhouse-server/certs/server.crt
+    -->
+
+    <https_port>8443</https_port>
+    <tcp_port_secure>9440</tcp_port_secure>
+
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/certs/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/server.key</privateKeyFile>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+    </openSSL>
+
+    <!-- ========================== -->
+    <!-- Data Storage Paths         -->
+    <!-- ========================== -->
+
+    <!-- Path to the directory where ClickHouse stores table data. -->
+    <path>/var/lib/clickhouse/</path>
+
+    <!-- Path for temporary data generated during query processing (e.g., large sorts, joins). -->
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+
+    <!-- Path for user-uploaded files (used by file() table function). -->
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+
+    <!-- Path for format schema files (Protobuf, Cap'n Proto, etc.). -->
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+    <!-- ========================== -->
+    <!-- Logging Configuration      -->
+    <!-- ========================== -->
+    <!--
+        Console logging is used here, which is the recommended approach when running
+        inside Docker or any container orchestrator (stdout/stderr are captured by
+        the container runtime).
+
+        For file-based logging, replace with:
+            <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+            <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+            <size>1000M</size>
+            <count>10</count>
+    -->
+    <logger>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <level>information</level>
+        <size>100M</size>
+        <count>3</count>
+        <console>1</console>
+    </logger>
+
+    <!-- ========================== -->
+    <!-- Memory and Query Limits    -->
+    <!-- ========================== -->
+
+    <!-- Maximum memory usage by the server process (in bytes). 10 GB by default.
+         Adjust according to available RAM on the host. A common rule of thumb is
+         to leave at least 10-20% of total RAM for the OS and other processes. -->
+    <max_server_memory_usage>10737418240</max_server_memory_usage>
+
+    <!-- Maximum number of concurrently executing queries. -->
+    <max_concurrent_queries>100</max_concurrent_queries>
+
+    <!-- Size of the mark cache (in bytes). Marks are index entries that allow
+         ClickHouse to locate data in columns. 5 GB is generous and helps
+         performance for tables with many parts. -->
+    <mark_cache_size>5368709120</mark_cache_size>
+
+    <!-- ========================== -->
+    <!-- Timezone                    -->
+    <!-- ========================== -->
+
+    <!-- Server timezone. Affects how DateTime values are interpreted when no
+         explicit timezone is specified. -->
+    <timezone>UTC</timezone>
+
+    <!-- ========================== -->
+    <!-- Users Configuration        -->
+    <!-- ========================== -->
+
+    <!-- Path to the users configuration file (contains users, profiles, quotas). -->
+    <users_config>users.xml</users_config>
+
+    <!-- User directories configuration. -->
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+
+    <!-- ========================== -->
+    <!-- Prometheus Metrics          -->
+    <!-- ========================== -->
+
+    <prometheus>
+        <port>9363</port>
+        <endpoint>/metrics</endpoint>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
+    </prometheus>
+
+    <!-- ========================== -->
+    <!-- Privacy and Telemetry      -->
+    <!-- ========================== -->
+
+    <!-- Disable sending crash reports to ClickHouse developers. -->
+    <send_crash_reports>
+        <enabled>false</enabled>
+    </send_crash_reports>
+
+    <!-- Disable usage telemetry collection. -->
+    <disable_internal_dns_cache>0</disable_internal_dns_cache>
+
+    <!-- ========================== -->
+    <!-- MergeTree Engine Settings  -->
+    <!-- ========================== -->
+    <!--
+        These settings control the behavior of the MergeTree family of table engines,
+        which is the primary storage engine in ClickHouse.
+    -->
+    <merge_tree>
+        <!-- Maximum total size of parts (in bytes) that can be merged into one part
+             when there is enough free space in the pool. ~150 GB.
+             Larger values allow bigger merges, which reduces the total number of
+             parts but requires more disk space during the merge. -->
+        <max_bytes_to_merge_at_max_space_in_pool>161061273600</max_bytes_to_merge_at_max_space_in_pool>
+    </merge_tree>
+
+    <!-- ========================== -->
+    <!-- Cluster Configuration      -->
+    <!-- ========================== -->
+
+    <!-- ClickHouse Keeper (coordination service for replication) -->
+    <zookeeper>
+        <node>
+            <host>keeper01</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>keeper02</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>keeper03</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <!-- Cluster topology: 1 shard, 2 replicas (ch01 + ch02) -->
+    <remote_servers>
+        <boroda_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>ch01</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>ch02</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </boroda_cluster>
+    </remote_servers>
+
+    <!-- Distributed DDL: CREATE/ALTER/DROP on cluster execute on all nodes -->
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+
+</clickhouse>

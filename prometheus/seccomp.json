@@ -1,0 +1,622 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 38,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "alarm",
+        "chmod",
+        "chown",
+        "clock_getres",
+        "creat",
+        "fchdir",
+        "fchmod",
+        "fchown",
+        "fgetxattr",
+        "flistxattr",
+        "fstatfs",
+        "get_thread_area",
+        "getresgid",
+        "getresuid",
+        "getxattr",
+        "inotify_add_watch",
+        "inotify_init",
+        "inotify_init1",
+        "inotify_rm_watch",
+        "lchown",
+        "lgetxattr",
+        "listxattr",
+        "llistxattr",
+        "rt_sigpending",
+        "rt_sigsuspend",
+        "rt_sigtimedwait",
+        "sched_getparam",
+        "sched_getscheduler",
+        "sched_setscheduler",
+        "set_thread_area",
+        "setpgid",
+        "statfs",
+        "ustat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Additional syscalls needed for container runtime and Go init"
+    },
+    {
+      "names": [
+        "read",
+        "readv",
+        "pread64",
+        "preadv",
+        "preadv2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Read operations: Required for reading configuration files (prometheus.yml), rule files, TSDB data blocks, WAL segments, and file descriptors (sockets, pipes)"
+    },
+    {
+      "names": [
+        "write",
+        "writev",
+        "pwrite64",
+        "pwritev",
+        "pwritev2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Write operations: Required for writing TSDB WAL entries, data blocks, chunk files, tombstones, and logging output"
+    },
+    {
+      "names": [
+        "open",
+        "openat",
+        "openat2",
+        "close",
+        "close_range"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File opening/closing: Required for accessing config files, TSDB data directories, WAL files, block metadata, and closing file descriptors"
+    },
+    {
+      "names": [
+        "stat",
+        "fstat",
+        "fstatat",
+        "lstat",
+        "newfstatat",
+        "statx"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File stat operations: Required for checking file existence, sizes, and timestamps during TSDB block management and WAL replay"
+    },
+    {
+      "names": [
+        "lseek",
+        "llseek"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File seeking: Required for navigating within TSDB block files, WAL segments, and reading block indexes"
+    },
+    {
+      "names": [
+        "access",
+        "faccessat",
+        "faccessat2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File access checks: Required for verifying permissions on data directories and configuration files"
+    },
+    {
+      "names": [
+        "fsync",
+        "fdatasync",
+        "sync",
+        "sync_file_range",
+        "syncfs"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File synchronization: CRITICAL for TSDB durability guarantees - ensures WAL entries and block data are persisted to disk before acknowledging writes"
+    },
+    {
+      "names": [
+        "flock"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File locking: Required for TSDB lock files to prevent multiple Prometheus instances from accessing the same data directory simultaneously"
+    },
+    {
+      "names": [
+        "fallocate",
+        "ftruncate",
+        "truncate"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File size management: Required for pre-allocating WAL segment space and managing TSDB block file sizes during compaction"
+    },
+    {
+      "names": [
+        "rename",
+        "renameat",
+        "renameat2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Atomic file renames: CRITICAL for TSDB compaction - ensures atomic replacement of old blocks with compacted blocks without data loss"
+    },
+    {
+      "names": [
+        "unlink",
+        "unlinkat",
+        "rmdir"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File/directory deletion: Required for removing old TSDB blocks after retention period expires and cleaning up temporary compaction files"
+    },
+    {
+      "names": [
+        "mkdir",
+        "mkdirat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Directory creation: Required for creating new TSDB block directories during compaction and WAL checkpoint directories"
+    },
+    {
+      "names": [
+        "getdents",
+        "getdents64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Directory listing: Required for discovering existing TSDB blocks, scanning data directories, and identifying files for compaction"
+    },
+    {
+      "names": [
+        "readlink",
+        "readlinkat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Symlink reading: Required for resolving symbolic links in data directory paths and configuration file locations"
+    },
+    {
+      "names": [
+        "fcntl",
+        "fcntl64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File control operations: Required for setting file descriptor flags (FD_CLOEXEC), file locks, and non-blocking I/O on sockets"
+    },
+    {
+      "names": [
+        "ioctl"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "I/O control: Required for terminal operations, socket options, and file system queries"
+    },
+    {
+      "names": [
+        "mmap",
+        "munmap",
+        "mremap"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Memory mapping: CRITICAL for both Go runtime heap management AND Prometheus TSDB mmap'd chunk files for efficient time series data access"
+    },
+    {
+      "names": [
+        "mprotect"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Memory protection: Required by Go runtime for protecting guard pages in goroutine stacks and managing memory permissions"
+    },
+    {
+      "names": [
+        "madvise"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Memory advice: Used by Go runtime and TSDB to optimize memory usage patterns (e.g., MADV_DONTNEED for releasing unused memory)"
+    },
+    {
+      "names": [
+        "mlock",
+        "mlock2",
+        "munlock",
+        "mlockall",
+        "munlockall"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Memory locking: Optional for preventing critical memory pages from being swapped (may be used if --storage.tsdb.wal-mmap-lock is enabled)"
+    },
+    {
+      "names": [
+        "brk"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Heap resizing: Used by Go runtime and C libraries for dynamic memory allocation"
+    },
+    {
+      "names": [
+        "clone",
+        "clone3"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Thread/process creation: CRITICAL for Go runtime - creates goroutines and OS threads for concurrent scraping, query execution, and compaction"
+    },
+    {
+      "names": [
+        "fork",
+        "vfork"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process forking: May be used by Go os/exec package if Prometheus spawns child processes (e.g., for alertmanager notifications)"
+    },
+    {
+      "names": [
+        "execve",
+        "execveat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Program execution: May be used for spawning external processes (e.g., notification handlers, service discovery scripts)"
+    },
+    {
+      "names": [
+        "exit",
+        "exit_group"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process termination: Required for graceful shutdown and goroutine cleanup"
+    },
+    {
+      "names": [
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Wait for child processes: Required if Prometheus spawns child processes for external integrations"
+    },
+    {
+      "names": [
+        "futex",
+        "get_robust_list",
+        "set_robust_list"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Futex operations: CRITICAL for Go runtime - implements mutexes, channels, and synchronization primitives for concurrent goroutines"
+    },
+    {
+      "names": [
+        "nanosleep",
+        "clock_nanosleep"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Sleep operations: Required for scrape intervals, query timeouts, rate limiting, and backoff strategies"
+    },
+    {
+      "names": [
+        "clock_gettime",
+        "gettimeofday",
+        "time"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Time retrieval: CRITICAL for timestamping scraped metrics, query execution timing, and TSDB block organization by time ranges"
+    },
+    {
+      "names": [
+        "getitimer",
+        "setitimer",
+        "timer_create",
+        "timer_settime",
+        "timer_gettime",
+        "timer_delete",
+        "timerfd_create",
+        "timerfd_settime",
+        "timerfd_gettime"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Timer operations: Used by Go runtime for scheduling and timeout management in concurrent operations"
+    },
+    {
+      "names": [
+        "socket",
+        "socketpair"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket creation: CRITICAL for creating TCP sockets for HTTP server (web UI/API), scrape target connections, and remote write/read"
+    },
+    {
+      "names": [
+        "bind"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket binding: Required to bind HTTP server to configured listen address (default :9090)"
+    },
+    {
+      "names": [
+        "listen"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket listening: Required to start HTTP server and accept incoming connections for queries and metric exposition"
+    },
+    {
+      "names": [
+        "accept",
+        "accept4"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Accept connections: Required to accept incoming HTTP connections for web UI, API queries, and federation requests"
+    },
+    {
+      "names": [
+        "connect"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Outbound connections: CRITICAL for scraping target endpoints, remote write/read, and service discovery API calls"
+    },
+    {
+      "names": [
+        "getsockname",
+        "getpeername"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket name retrieval: Required for logging connection information and debugging network issues"
+    },
+    {
+      "names": [
+        "setsockopt",
+        "getsockopt"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket options: Required for setting TCP keepalive, timeouts, buffer sizes, and TLS options on HTTP connections"
+    },
+    {
+      "names": [
+        "shutdown"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket shutdown: Required for gracefully closing connections during scrape timeouts and server shutdown"
+    },
+    {
+      "names": [
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "sendmmsg",
+        "recvmmsg"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Socket data transfer: Required for sending HTTP requests to scrape targets and receiving responses, plus UDP for DNS"
+    },
+    {
+      "names": [
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "epoll_pwait2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Epoll operations: CRITICAL for Go netpoller - efficient multiplexing of thousands of concurrent scrape connections and HTTP requests"
+    },
+    {
+      "names": [
+        "poll",
+        "ppoll",
+        "ppoll_time64",
+        "select",
+        "pselect6",
+        "pselect6_time64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Legacy polling: Fallback I/O multiplexing mechanisms for compatibility"
+    },
+    {
+      "names": [
+        "pipe",
+        "pipe2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Pipe creation: Used by Go runtime for signal handling coordination and potentially for child process communication"
+    },
+    {
+      "names": [
+        "eventfd",
+        "eventfd2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Event file descriptors: Used by Go runtime for efficient goroutine wakeup notifications"
+    },
+    {
+      "names": [
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "sigaltstack"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Signal handling: CRITICAL for Go runtime signal handling (SIGINT/SIGTERM for graceful shutdown) and sigaltstack for safe signal delivery"
+    },
+    {
+      "names": [
+        "kill",
+        "tkill",
+        "tgkill"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Signal sending: Required for coordinating goroutines and potentially signaling child processes"
+    },
+    {
+      "names": [
+        "getpid",
+        "gettid",
+        "getppid",
+        "getpgid",
+        "getpgrp"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process ID retrieval: Used by Go runtime for thread management and logging process information"
+    },
+    {
+      "names": [
+        "getuid",
+        "geteuid",
+        "getgid",
+        "getegid",
+        "getgroups"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "User/group ID retrieval: Required for permission checks and logging security context"
+    },
+    {
+      "names": [
+        "setuid",
+        "setgid",
+        "setreuid",
+        "setregid",
+        "setresuid",
+        "setresgid",
+        "setgroups"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "User/group ID changes: May be required if Prometheus needs to drop privileges after binding to port"
+    },
+    {
+      "names": [
+        "capget",
+        "capset"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Capability operations: Required for checking and potentially dropping Linux capabilities during privilege reduction"
+    },
+    {
+      "names": [
+        "prctl"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process control: Used by Go runtime for thread naming (PR_SET_NAME), death signal management, and no-new-privs enforcement"
+    },
+    {
+      "names": [
+        "arch_prctl",
+        "set_tid_address"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Architecture-specific process control: Required by Go runtime on x86_64 for thread-local storage (TLS) setup, set_tid_address needed for thread init"
+    },
+    {
+      "names": [
+        "sched_yield"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Scheduler yield: Used by Go runtime for cooperative scheduling when waiting on locks or channels"
+    },
+    {
+      "names": [
+        "sched_getaffinity",
+        "sched_setaffinity"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "CPU affinity: CRITICAL for Go runtime - sched_getaffinity determines GOMAXPROCS (number of OS threads for goroutines)"
+    },
+    {
+      "names": [
+        "getrlimit",
+        "setrlimit",
+        "prlimit64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Resource limits: Required for checking file descriptor limits, memory limits, and potentially adjusting them"
+    },
+    {
+      "names": [
+        "getrusage"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Resource usage stats: Used for collecting process metrics exposed in Prometheus /metrics endpoint"
+    },
+    {
+      "names": [
+        "sysinfo"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "System information: Required for collecting system metrics and monitoring available resources"
+    },
+    {
+      "names": [
+        "uname"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "System name/version: Used for logging system information and version detection"
+    },
+    {
+      "names": [
+        "getrandom"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Random number generation: CRITICAL for crypto/rand used in TLS handshakes, query IDs, and security-sensitive operations"
+    },
+    {
+      "names": [
+        "getcwd"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Get current directory: Required for resolving relative paths in configuration"
+    },
+    {
+      "names": [
+        "chdir"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Change directory: May be used for working in specific data directories"
+    },
+    {
+      "names": [
+        "dup",
+        "dup2",
+        "dup3"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File descriptor duplication: Used for redirecting stdout/stderr and managing file descriptor lifetimes"
+    },
+    {
+      "names": [
+        "umask"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File creation mask: Controls default permissions for created TSDB files and directories"
+    },
+    {
+      "names": [
+        "copy_file_range"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Efficient file copying: May be used for optimized TSDB block compaction on modern kernels"
+    },
+    {
+      "names": [
+        "splice",
+        "tee",
+        "vmsplice"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Zero-copy data transfer: Optimization for moving data between file descriptors without copying to userspace"
+    },
+    {
+      "names": [
+        "rseq"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Restartable sequences: Modern CPU optimization primitive used by glibc and Go runtime for per-CPU operations"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Kafka UI Configuration
+# Documentation: https://docs.kafka-ui.provectus.io/configuration/configuration-file
+
+server:
+  servlet:
+    context-path: /boroda/kafka-ui
+
+kafka:
+  clusters:
+    - name: boroda
+      bootstrapServers: kafka:9092
+      readOnly: false
+      schemaRegistry: http://schema-registry:8081
+      kafkaConnect:
+        - name: connect-cluster
+          address: http://kafka-connect:8083
+      ksqldbServer: http://ksqldb:8088
+      properties:
+        security.protocol: SASL_PLAINTEXT
+        sasl.mechanism: PLAIN
+        sasl.jaas.config: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="Tn8yB3cJ6fE2wQ5K";'

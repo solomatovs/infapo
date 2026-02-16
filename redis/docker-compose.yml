@@ -1,0 +1,107 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis
+    hostname: redis
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root redis user (999:1000 in alpine image)
+    user: "999:1000"
+
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+
+    command:
+      - redis-server
+      - /etc/redis/redis.conf
+
+    volumes:
+      - ./config/redis.conf:/etc/redis/redis.conf:ro
+      - redis-data:/data
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+          cpus: "2"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Tn8yB3cJ6fE2wQ5K", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - docker
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0-alpine
+    container_name: redis-exporter
+    hostname: redis-exporter
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root nobody user
+    user: "65534:65534"
+
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: Tn8yB3cJ6fE2wQ5K
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+        reservations:
+          memory: 32M
+          cpus: "0.1"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9121/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    networks:
+      - docker
+
+volumes:
+  redis-data:
+    name: redis-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/redis-data
+
+networks:
+  docker:
+    external: true

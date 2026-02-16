@@ -1,0 +1,621 @@
+{
+  "comment": "Seccomp profile for ClickHouse server in Docker. defaultAction blocks unlisted syscalls with ENOSYS (38).",
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 38,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "comment": "File I/O basics — ClickHouse reads/writes data parts, logs, configs, and temporary files constantly",
+      "names": [
+        "open",
+        "openat",
+        "openat2",
+        "close",
+        "close_range",
+        "read",
+        "write",
+        "lseek",
+        "readv",
+        "writev",
+        "preadv",
+        "preadv2",
+        "pwritev",
+        "pwritev2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Random-offset file access — MergeTree reads columns at arbitrary offsets within data part files",
+      "names": [
+        "pread64",
+        "pwrite64"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Disk space preallocation — ClickHouse preallocates space for data parts and write-ahead logs to reduce fragmentation",
+      "names": [
+        "fallocate"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Efficient data transfer — sendfile is used for HTTP responses and replication data transfer without user-space copies",
+      "names": [
+        "sendfile"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File metadata and directory operations — ClickHouse inspects data part directories, checks file sizes, and manages symlinks for detached parts",
+      "names": [
+        "stat",
+        "fstat",
+        "lstat",
+        "newfstatat",
+        "statx",
+        "statfs",
+        "fstatfs",
+        "access",
+        "faccessat",
+        "faccessat2",
+        "readlink",
+        "readlinkat",
+        "getcwd",
+        "getdents",
+        "getdents64"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Directory and file management — creating/removing data part directories, renaming parts during merges, hard-linking during mutations",
+      "names": [
+        "mkdir",
+        "mkdirat",
+        "rmdir",
+        "unlink",
+        "unlinkat",
+        "rename",
+        "renameat",
+        "renameat2",
+        "link",
+        "linkat",
+        "symlink",
+        "symlinkat"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File descriptor control — ClickHouse duplicates fds for child processes, sets close-on-exec, and manages non-blocking I/O",
+      "names": [
+        "dup",
+        "dup2",
+        "dup3",
+        "fcntl",
+        "ioctl",
+        "flock",
+        "fsync",
+        "fdatasync",
+        "sync_file_range",
+        "ftruncate",
+        "truncate",
+        "fchmod",
+        "fchmodat",
+        "fchown",
+        "fchownat",
+        "chown",
+        "chmod",
+        "utimensat",
+        "futimesat"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File locking — ClickHouse uses advisory locks to prevent concurrent access to data directories",
+      "names": [
+        "fadvise64"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Memory-mapped files — MergeTree engine mmaps index files and mark files for fast random access during queries",
+      "names": [
+        "mmap",
+        "munmap",
+        "mprotect",
+        "mremap",
+        "msync",
+        "madvise",
+        "mincore"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Heap allocation — ClickHouse uses jemalloc which calls brk/sbrk for small allocations and memory arena management",
+      "names": [
+        "brk"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Networking — ClickHouse listens on TCP ports (native 9000, HTTP 8123, replication 9009) and connects to ZooKeeper/Keeper",
+      "names": [
+        "socket",
+        "socketpair",
+        "bind",
+        "listen",
+        "accept",
+        "accept4",
+        "connect",
+        "shutdown",
+        "getsockname",
+        "getpeername",
+        "setsockopt",
+        "getsockopt"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Network data transfer — ClickHouse sends/receives query data, replication chunks, and distributed query results",
+      "names": [
+        "send",
+        "sendto",
+        "sendmsg",
+        "sendmmsg",
+        "recv",
+        "recvfrom",
+        "recvmsg",
+        "recvmmsg"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Async I/O multiplexing — ClickHouse uses epoll for its network server (Poco library) to handle thousands of concurrent connections",
+      "names": [
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "epoll_pwait2",
+        "poll",
+        "ppoll",
+        "select",
+        "pselect6"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Linux AIO — ClickHouse uses io_submit/io_getevents for async reads of MergeTree data parts to overlap I/O with computation",
+      "names": [
+        "io_setup",
+        "io_submit",
+        "io_getevents",
+        "io_cancel",
+        "io_destroy"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Event and timer file descriptors — ClickHouse uses eventfd for thread pool wakeups and timerfd for background task scheduling",
+      "names": [
+        "eventfd",
+        "eventfd2",
+        "timerfd_create",
+        "timerfd_settime",
+        "timerfd_gettime",
+        "signalfd",
+        "signalfd4"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Inotify — ClickHouse watches config files for live reload (config.xml, users.xml) without requiring a restart",
+      "names": [
+        "inotify_init",
+        "inotify_init1",
+        "inotify_add_watch",
+        "inotify_rm_watch"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Pipes — used for inter-process communication with child processes (e.g., executable dictionaries, format schema compilers)",
+      "names": [
+        "pipe",
+        "pipe2",
+        "splice",
+        "tee",
+        "copy_file_range"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Threading — ClickHouse spawns thread pools for query execution, merges, mutations, fetches, and background tasks",
+      "names": [
+        "clone",
+        "clone3",
+        "fork",
+        "vfork",
+        "execve",
+        "execveat",
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Thread synchronization — futex is the foundation for all mutexes, condition variables, and read-write locks in ClickHouse",
+      "names": [
+        "futex",
+        "futex_waitv"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Thread scheduling — ClickHouse adjusts thread priorities for background merges vs. interactive queries",
+      "names": [
+        "sched_yield",
+        "sched_getaffinity",
+        "sched_setaffinity",
+        "sched_getscheduler",
+        "sched_setscheduler",
+        "sched_getparam",
+        "sched_setparam",
+        "sched_get_priority_min",
+        "sched_get_priority_max"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Thread-local storage and robust futexes — required by glibc/pthread for thread management internals",
+      "names": [
+        "set_robust_list",
+        "get_robust_list",
+        "set_tid_address",
+        "arch_prctl",
+        "prctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Signal handling — ClickHouse installs handlers for SIGTERM (graceful shutdown), SIGINT, and fault signals for stack traces",
+      "names": [
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "rt_sigsuspend",
+        "rt_sigpending",
+        "rt_sigtimedwait",
+        "rt_sigqueueinfo",
+        "rt_tgsigqueueinfo",
+        "sigaltstack",
+        "kill",
+        "tgkill",
+        "tkill"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process/thread identity — ClickHouse checks uid/gid for permission handling and logs thread IDs in traces",
+      "names": [
+        "getpid",
+        "gettid",
+        "getppid",
+        "getuid",
+        "geteuid",
+        "getgid",
+        "getegid",
+        "getresuid",
+        "getresgid",
+        "getgroups"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Credential changes — ClickHouse drops privileges from root to clickhouse user on startup inside Docker",
+      "names": [
+        "setuid",
+        "setgid",
+        "setreuid",
+        "setregid",
+        "setresuid",
+        "setresgid",
+        "setgroups",
+        "capget",
+        "capset"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Time — ClickHouse reads wall clock and monotonic clock for query profiling, timeouts, and event timestamps",
+      "names": [
+        "clock_gettime",
+        "clock_getres",
+        "clock_nanosleep",
+        "gettimeofday",
+        "nanosleep",
+        "time"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Resource limits — ClickHouse checks and sets file descriptor limits and memory lock limits at startup",
+      "names": [
+        "getrlimit",
+        "setrlimit",
+        "prlimit64",
+        "getrusage"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "System information — ClickHouse reads CPU count, memory size, and hostname for distributed query routing and logging",
+      "names": [
+        "uname",
+        "sysinfo",
+        "getrandom",
+        "syslog"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Name resolution — ClickHouse resolves hostnames for ZooKeeper/Keeper, remote() table function, and replication endpoints",
+      "names": [
+        "gethostname",
+        "sethostname"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process lifecycle — ClickHouse calls exit on clean shutdown and exit_group for thread-safe termination",
+      "names": [
+        "exit",
+        "exit_group"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Memory locking — ClickHouse can mlock pages for the mark cache and index cache to prevent swapping critical data",
+      "names": [
+        "mlock",
+        "mlock2",
+        "munlock",
+        "mlockall",
+        "munlockall"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Filesystem mount namespace — needed by Docker entrypoint scripts to set up volumes and tmpfs mounts",
+      "names": [
+        "pivot_root",
+        "chroot",
+        "chdir",
+        "fchdir"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Extended attributes — ClickHouse may read xattrs for SELinux labels or capability metadata on data files",
+      "names": [
+        "getxattr",
+        "lgetxattr",
+        "fgetxattr",
+        "setxattr",
+        "lsetxattr",
+        "fsetxattr",
+        "listxattr",
+        "llistxattr",
+        "flistxattr",
+        "removexattr",
+        "lremovexattr",
+        "fremovexattr"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Miscellaneous — umask for file creation permissions, personality for uname compat check, seccomp for nested filtering",
+      "names": [
+        "umask",
+        "seccomp"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Perf and profiling — ClickHouse supports hardware-counter-based query profiling via perf_event_open",
+      "names": [
+        "perf_event_open"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Memory policy — ClickHouse can use NUMA-aware memory allocation for better performance on multi-socket servers",
+      "names": [
+        "mbind",
+        "get_mempolicy",
+        "set_mempolicy",
+        "migrate_pages",
+        "move_pages"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "DISABLED: io_uring — modern async I/O subsystem. Has had multiple kernel CVEs (CVE-2021-41073, CVE-2022-29582, CVE-2023-2598, etc.)",
+      "names": [
+        "io_uring_enter",
+        "io_uring_register",
+        "io_uring_setup"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: mount/umount — ClickHouse has no need to mount or unmount filesystems; volumes are mounted by the container runtime",
+      "names": [
+        "mount",
+        "mount_setattr",
+        "umount",
+        "umount2",
+        "move_mount",
+        "open_tree",
+        "fsopen",
+        "fsconfig",
+        "fsmount",
+        "fspick"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: ptrace — process tracing is not needed and would allow inspecting other container processes",
+      "names": [
+        "ptrace",
+        "process_vm_readv",
+        "process_vm_writev",
+        "kcmp"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: time modification — ClickHouse must not alter the system clock; NTP should handle time synchronization on the host",
+      "names": [
+        "adjtimex",
+        "clock_adjtime",
+        "clock_settime",
+        "settimeofday"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: personality with UNAME26 — the UNAME26 flag fakes kernel version strings and is abused for sandbox escapes",
+      "names": [
+        "personality"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: modify_ldt — modifying the Local Descriptor Table is a historic privilege escalation vector on x86",
+      "names": [
+        "modify_ldt"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: POSIX message queues — ClickHouse does not use POSIX MQs; blocking them reduces IPC attack surface",
+      "names": [
+        "mq_open",
+        "mq_unlink",
+        "mq_timedsend",
+        "mq_timedreceive",
+        "mq_notify",
+        "mq_getsetattr"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: fanotify_mark — filesystem-wide notification marks require CAP_SYS_ADMIN and are not needed by ClickHouse",
+      "names": [
+        "fanotify_init",
+        "fanotify_mark"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: process_mrelease — releasing another process's memory is a privileged operation with no ClickHouse use case",
+      "names": [
+        "process_mrelease"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kexec/reboot/swap — ClickHouse must never reboot the host, load a new kernel, or manage swap; these are host-level operations",
+      "names": [
+        "kexec_load",
+        "kexec_file_load",
+        "reboot",
+        "swapon",
+        "swapoff"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kernel modules — loading or unloading kernel modules from a container is a critical security boundary violation",
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "create_module"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kernel keyring — ClickHouse does not use the kernel key management facility; secrets are managed externally",
+      "names": [
+        "add_key",
+        "request_key",
+        "keyctl"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: BPF — eBPF program loading from a container is a privilege escalation risk with no ClickHouse requirement",
+      "names": [
+        "bpf"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: userfaultfd — user-space page fault handling has been used in kernel exploits and is not needed by ClickHouse",
+      "names": [
+        "userfaultfd"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kernel accounting and quota — ClickHouse does not manage process accounting or disk quotas at the kernel level",
+      "names": [
+        "acct",
+        "quotactl",
+        "quotactl_fd"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: namespace creation — ClickHouse should not create new namespaces; the container runtime manages namespace isolation",
+      "names": [
+        "unshare",
+        "setns"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    }
+  ]
+}

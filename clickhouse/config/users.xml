@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!--
+    ClickHouse Users Configuration
+    ==============================
+    Documentation: https://clickhouse.com/docs/en/operations/settings/settings-users
+
+    HOW TO ADD USERS WITH PASSWORDS
+    ================================
+    Generate SHA256 hash:  echo -n 'your_password' | sha256sum | tr -d ' -'
+
+    <my_user>
+        <password_sha256_hex>HASH_HERE</password_sha256_hex>
+        <networks><ip>::/0</ip></networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </my_user>
+-->
+<clickhouse>
+
+    <profiles>
+        <default>
+            <max_memory_usage>10000000000</max_memory_usage>
+            <max_execution_time>60</max_execution_time>
+        </default>
+
+        <readonly>
+            <readonly>1</readonly>
+        </readonly>
+    </profiles>
+
+    <users>
+        <!-- default user is blocked -->
+        <default>
+            <password_sha256_hex>0000000000000000000000000000000000000000000000000000000000000000</password_sha256_hex>
+            <networks>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <readonly>1</readonly>
+            <profile>readonly</profile>
+            <quota>default</quota>
+        </default>
+
+        <admin>
+            <!-- Password: Tn8yB3cJ6fE2wQ5K -->
+            <password_sha256_hex>80d6f9330f501354e29ff36bc1b6c0b743f4d92dc8fc231c49662f061040cb5a</password_sha256_hex>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <readonly>0</readonly>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </admin>
+
+        <healthcheck>
+            <!-- Password: healthcheck -->
+            <password_sha256_hex>b1d5226fdc3d7e029e8bac2aaa3ba0b3e0dcee059236df09c91f670197ecc329</password_sha256_hex>
+            <networks>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <readonly>1</readonly>
+            <profile>readonly</profile>
+            <quota>default</quota>
+            <allow_databases>
+                <database>system</database>
+            </allow_databases>
+        </healthcheck>
+    </users>
+
+    <quotas>
+        <default>
+            <interval>
+                <duration>3600</duration>
+                <queries>0</queries>
+                <errors>0</errors>
+                <result_rows>0</result_rows>
+                <read_rows>0</read_rows>
+                <execution_time>0</execution_time>
+            </interval>
+        </default>
+    </quotas>
+
+</clickhouse>

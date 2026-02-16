@@ -1,0 +1,8 @@
+{
+  "port": 80,
+  "baseURL": "/boroda/browser",
+  "root": "/srv",
+  "database": "/db/filebrowser.db",
+  "log": "stdout",
+  "locale": "ru"
+}

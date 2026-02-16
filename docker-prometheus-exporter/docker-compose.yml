@@ -1,0 +1,21 @@
+services:
+  docker-prometheus-exporter:
+    container_name: docker-prometheus-exporter
+    hostname: docker-prometheus-exporter
+    image: calum4/docker-prometheus-exporter:1
+    user: "0:0" # can instead be run as an unprivileged user with the docker group
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - RUST_LOG=info,docker_prometheus_exporter=info
+      - LISTEN_ADDR=0.0.0.0
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": true
+    restart: unless-stopped
+    read_only: true
+    networks:
+      - docker
+
+networks:
+  docker:
+    external: true

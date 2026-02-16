@@ -1,0 +1,64 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-02-07T23-21-09Z
+    container_name: minio
+    hostname: minio
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=256M,noexec,nosuid,nodev
+
+    # No external ports - accessed via nginx reverse proxy
+
+    env_file:
+      - ./config/minio.env
+
+    command:
+      - server
+      - /data
+      - --console-address=:9001
+
+    volumes:
+      - minio-data:/data
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - docker
+
+volumes:
+  minio-data:
+    name: minio-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/minio-data
+
+networks:
+  docker:
+    external: true

@@ -1,0 +1,9 @@
+# sqlpad web sql editor
+location /boroda/sqlpad/ {
+    resolver 127.0.0.11 valid=5s;
+    set $sqlpad http://sqlpad:3000;
+    proxy_pass $sqlpad;
+
+    include /etc/nginx/conf.d/options/proxy.conf;
+    include /etc/nginx/conf.d/options/common.conf;
+}

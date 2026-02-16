@@ -1,0 +1,240 @@
+# Prometheus Configuration
+# Documentation: https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+
+global:
+  # How frequently to scrape targets
+  scrape_interval: 15s
+
+  # How frequently to evaluate rules
+  evaluation_interval: 15s
+
+  # Timeout for scraping a target
+  scrape_timeout: 10s
+
+# Rule files for alerting and recording rules
+# rule_files:
+#   - /etc/prometheus/rules/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    scheme: http
+    metrics_path: /boroda/prometheus/metrics
+    static_configs:
+      - targets: ['prometheus:9090']
+        labels:
+          instance: 'prometheus'
+
+  # Grafana monitoring
+  - job_name: 'grafana'
+    scheme: http
+    metrics_path: /boroda/grafana/metrics
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          instance: 'grafana'
+
+  # ClickHouse monitoring (via built-in Prometheus endpoint on dedicated port)
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['ch01:9363']
+        labels:
+          instance: 'ch01'
+      - targets: ['ch02:9363']
+        labels:
+          instance: 'ch02'
+    metrics_path: /metrics
+
+  # ClickHouse Keeper monitoring (via built-in Prometheus endpoint)
+  - job_name: 'clickhouse-keeper'
+    static_configs:
+      - targets: ['keeper01:9363']
+        labels:
+          instance: 'keeper01'
+      - targets: ['keeper02:9363']
+        labels:
+          instance: 'keeper02'
+      - targets: ['keeper03:9363']
+        labels:
+          instance: 'keeper03'
+    metrics_path: /metrics
+
+  # Kafka monitoring (via kafka-exporter)
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+        labels:
+          instance: 'kafka'
+
+  # HTTP availability probes (via blackbox exporter)
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ['http://prometheus:9090/boroda/prometheus/-/healthy']
+        labels:
+          instance: 'prometheus'
+      - targets: ['http://grafana:3000/boroda/grafana/api/health']
+        labels:
+          instance: 'grafana'
+      - targets: ['http://ch01:8123/ping']
+        labels:
+          instance: 'ch01'
+      - targets: ['http://ch02:8123/ping']
+        labels:
+          instance: 'ch02'
+      - targets: ['http://cloudbeaver:8978/boroda/cloudbeaver/status']
+        labels:
+          instance: 'cloudbeaver'
+      - targets: ['http://kafka-ui:8080/boroda/kafka-ui/actuator/health']
+        labels:
+          instance: 'kafka-ui'
+      - targets: ['http://clickhouse-monitoring:3000/']
+        labels:
+          instance: 'clickhouse-monitoring'
+      - targets: ['http://schema-registry:8081/']
+        labels:
+          instance: 'schema-registry'
+      - targets: ['http://kafka-connect:8083/connectors']
+        labels:
+          instance: 'kafka-connect'
+      - targets: ['http://ksqldb:8088/info']
+        labels:
+          instance: 'ksqldb'
+      - targets: ['http://minio:9000/minio/health/live']
+        labels:
+          instance: 'minio'
+      - targets: ['http://sqlpad:3000/boroda/sqlpad/api/app']
+        labels:
+          instance: 'sqlpad'
+      - targets: ['http://redisinsight:5540/boroda/redis/api/health']
+        labels:
+          instance: 'redisinsight'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: probe_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ICMP probes (via blackbox exporter)
+  - job_name: 'blackbox-icmp'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets: ['prometheus']
+        labels:
+          instance: 'prometheus'
+      - targets: ['grafana']
+        labels:
+          instance: 'grafana'
+      - targets: ['ch01']
+        labels:
+          instance: 'ch01'
+      - targets: ['ch02']
+        labels:
+          instance: 'ch02'
+      - targets: ['cloudbeaver']
+        labels:
+          instance: 'cloudbeaver'
+      - targets: ['kafka-ui']
+        labels:
+          instance: 'kafka-ui'
+      - targets: ['clickhouse-monitoring']
+        labels:
+          instance: 'clickhouse-monitoring'
+      - targets: ['schema-registry']
+        labels:
+          instance: 'schema-registry'
+      - targets: ['kafka-connect']
+        labels:
+          instance: 'kafka-connect'
+      - targets: ['ksqldb']
+        labels:
+          instance: 'ksqldb'
+      - targets: ['minio']
+        labels:
+          instance: 'minio'
+      - targets: ['sqlpad']
+        labels:
+          instance: 'sqlpad'
+      - targets: ['redisinsight']
+        labels:
+          instance: 'redisinsight'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: probe_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # MySQL monitoring (via mysqld-exporter)
+  # TODO: uncomment when MySQL address is configured
+  # - job_name: 'mysql'
+  #   static_configs:
+  #     - targets: ['mysqld-exporter:9104']
+  #       labels:
+  #         instance: 'mysql'
+
+  # Node Exporter for host metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          instance: 'debian-server'
+
+  # Nginx monitoring (via nginx-prometheus-exporter)
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+        labels:
+          instance: 'nginx'
+
+  # Redis monitoring (via redis-exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          instance: 'redis'
+
+  # MinIO monitoring (built-in Prometheus endpoint)
+  - job_name: 'minio'
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ['minio:9000']
+        labels:
+          instance: 'minio'
+
+  - job_name: 'minio-node'
+    metrics_path: /minio/v2/metrics/node
+    static_configs:
+      - targets: ['minio:9000']
+        labels:
+          instance: 'minio'
+
+  - job_name: 'minio-bucket'
+    metrics_path: /minio/v2/metrics/bucket
+    static_configs:
+      - targets: ['minio:9000']
+        labels:
+          instance: 'minio'
+
+  - job_name: 'minio-resource'
+    metrics_path: /minio/v2/metrics/resource
+    static_configs:
+      - targets: ['minio:9000']
+        labels:
+          instance: 'minio'
+
+  # Docker container metrics (via docker-prometheus-exporter)
+  - job_name: 'docker'
+    metrics_path: /
+    static_configs:
+      - targets: ['docker-prometheus-exporter:9000']
+        labels:
+          instance: 'docker'

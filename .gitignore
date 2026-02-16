@@ -1,0 +1,13 @@
+# Secrets & certs
+.env
+*.env
+**/certs/
+**/passwords/
+
+# Build artifacts
+**/build/
+quote-tools/*/quote-*
+!quote-tools/*/quote-*.go
+
+# Claude Code
+.claude/

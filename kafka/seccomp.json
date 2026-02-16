@@ -1,0 +1,671 @@
+{
+  "comment": "Seccomp profile for Apache Kafka (apache/kafka image, KRaft mode). JVM-based broker requiring thread creation, NIO networking, memory-mapped I/O, and durable log segment management. Default-deny with explicit allowlist grouped by function.",
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 38,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "comment": "ALLOW: File I/O basics — Kafka broker reads/writes log segments, configuration files, metadata snapshots, and __consumer_offsets partitions. The JVM itself needs file access for class loading, JIT compiler output, and GC logs.",
+      "names": [
+        "open",
+        "openat",
+        "openat2",
+        "close",
+        "close_range",
+        "read",
+        "write",
+        "readv",
+        "writev",
+        "lseek",
+        "dup",
+        "dup2",
+        "dup3",
+        "pipe",
+        "pipe2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Positional read/write — Kafka uses pread64/pwrite64 extensively for random access into log segment files (.log, .index, .timeindex) without modifying the file offset, enabling concurrent readers on the same segment.",
+      "names": [
+        "pread64",
+        "pwrite64",
+        "preadv",
+        "preadv2",
+        "pwritev",
+        "pwritev2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Zero-copy transfer — sendfile is Kafka's key performance optimization. When consumers fetch messages, Kafka transfers data directly from the page cache to the network socket via sendfile, bypassing user-space copies entirely. This is critical for high-throughput consumption.",
+      "names": [
+        "sendfile"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Log segment management — Kafka pre-allocates log segment files with fallocate and truncates them with ftruncate when rolling segments or cleaning up. This avoids filesystem fragmentation and ensures predictable write performance for the commit log.",
+      "names": [
+        "ftruncate",
+        "fallocate",
+        "truncate"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Durability guarantees — Kafka calls fsync/fdatasync to flush log segments and index files to disk before acknowledging writes (controlled by flush.messages and flush.ms). KRaft metadata log also requires fsync for leader election correctness.",
+      "names": [
+        "fsync",
+        "fdatasync",
+        "sync_file_range",
+        "syncfs"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: File metadata and directory operations — Kafka manages log directories (log.dirs), partition directories, and checks file sizes/timestamps for log retention policies. stat/fstat are used constantly by the JVM class loader and Kafka's LogManager.",
+      "names": [
+        "stat",
+        "fstat",
+        "lstat",
+        "newfstatat",
+        "statx",
+        "statfs",
+        "fstatfs",
+        "access",
+        "faccessat",
+        "faccessat2",
+        "readlink",
+        "readlinkat",
+        "getcwd",
+        "getdents",
+        "getdents64",
+        "mkdir",
+        "mkdirat",
+        "rmdir",
+        "rename",
+        "renameat",
+        "renameat2",
+        "unlink",
+        "unlinkat",
+        "link",
+        "linkat",
+        "symlink",
+        "symlinkat"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: File descriptor control — fcntl is used by the JVM for non-blocking socket configuration and file locking. Kafka's LockFile uses flock to prevent multiple brokers from using the same log directory. ioctl is needed for terminal and socket operations.",
+      "names": [
+        "fcntl",
+        "flock",
+        "ioctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: File ownership and permissions — Kafka needs to set permissions on log segment files, PID files, and metadata snapshots. The JVM may also adjust permissions on temporary files.",
+      "names": [
+        "chmod",
+        "fchmod",
+        "fchmodat",
+        "chown",
+        "fchown",
+        "fchownat",
+        "umask"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Extended attributes — Used by some filesystems for metadata. The JVM's NIO Files.readAttributes may access xattrs on supported filesystems.",
+      "names": [
+        "getxattr",
+        "fgetxattr",
+        "lgetxattr",
+        "setxattr",
+        "fsetxattr",
+        "lsetxattr",
+        "listxattr",
+        "flistxattr",
+        "llistxattr",
+        "removexattr",
+        "fremovexattr",
+        "lremovexattr"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Memory mapping — The JVM uses mmap for heap allocation, code cache (JIT compiled methods), metaspace (class metadata), and direct byte buffers. Kafka's index files (.index, .timeindex) are memory-mapped for fast random access lookups. mprotect is needed by the JVM to mark code cache pages as executable after JIT compilation.",
+      "names": [
+        "mmap",
+        "munmap",
+        "mprotect",
+        "mremap",
+        "madvise",
+        "msync",
+        "mincore",
+        "brk"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Memory locking — The JVM may lock pages to prevent swapping of critical structures (e.g., with -XX:+AlwaysPreTouch). Kafka performance tuning sometimes involves mlockall to avoid GC pause spikes from page faults.",
+      "names": [
+        "mlock",
+        "mlock2",
+        "munlock",
+        "mlockall",
+        "munlockall"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Process and thread creation — clone/clone3 are essential for JVM thread creation (GC threads, Kafka request handler threads, network acceptor threads, fetcher threads, KRaft Raft I/O threads). fork/vfork are needed for Runtime.exec() used by some Kafka scripts and health checks.",
+      "names": [
+        "clone",
+        "clone3",
+        "fork",
+        "vfork",
+        "execve",
+        "execveat",
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Thread synchronization — futex is the backbone of JVM synchronization: every synchronized block, ReentrantLock, CountDownLatch, and ConcurrentHashMap in Kafka ultimately relies on futex. Kafka's request purgatory, delayed operations, and controller event queue all depend on futex-based primitives.",
+      "names": [
+        "futex",
+        "futex_waitv",
+        "set_robust_list",
+        "get_robust_list"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Thread scheduling — The JVM uses sched_* syscalls for thread priority management and yield operations. Kafka's network threads and request handler threads may have adjusted priorities. sched_getaffinity is used by the JVM to determine available CPU count for thread pool sizing.",
+      "names": [
+        "sched_yield",
+        "sched_getaffinity",
+        "sched_setaffinity",
+        "sched_getscheduler",
+        "sched_setscheduler",
+        "sched_getparam",
+        "sched_setparam",
+        "sched_get_priority_min",
+        "sched_get_priority_max"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Socket creation and connection — Kafka broker listens on advertised.listeners ports (typically 9092/9093/9094) for client and inter-broker communication. In KRaft mode, the controller also listens for Raft protocol messages. Each socket operation here supports the Kafka network layer (SocketServer, Acceptor, Processor threads).",
+      "names": [
+        "socket",
+        "socketpair",
+        "bind",
+        "listen",
+        "accept",
+        "accept4",
+        "connect",
+        "shutdown"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Socket data transfer — Kafka uses sendto/recvfrom for UDP (DNS resolution) and sendmsg/recvmsg for TCP (broker-to-broker replication, client produce/fetch). These are the data path for every Kafka message flowing through the broker.",
+      "names": [
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "sendmmsg",
+        "recvmmsg"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Socket options — Kafka configures TCP_NODELAY (low-latency messaging), SO_REUSEADDR (fast broker restart), SO_KEEPALIVE (detecting dead connections), and SO_SNDBUF/SO_RCVBUF (socket buffer tuning via socket.send.buffer.bytes and socket.receive.buffer.bytes).",
+      "names": [
+        "setsockopt",
+        "getsockopt",
+        "getsockname",
+        "getpeername"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: I/O multiplexing (epoll) — Kafka's network layer is built on Java NIO Selectors, which use epoll on Linux. Each Processor thread runs an epoll loop to handle thousands of concurrent client connections efficiently. This is the core of Kafka's high-connection-count scalability.",
+      "names": [
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "epoll_pwait2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Legacy I/O multiplexing — poll/ppoll are used by the JVM internally (e.g., for thread sleep with timeout, GC safe-point polling). select is used by older JVM codepaths and some native libraries.",
+      "names": [
+        "poll",
+        "ppoll",
+        "select",
+        "pselect6"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Event notification — eventfd is used by the JVM NIO implementation to wake up selector threads (e.g., when new connections arrive or when the broker is shutting down). This is how Kafka's network layer achieves non-blocking wakeup of I/O threads.",
+      "names": [
+        "eventfd",
+        "eventfd2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: File event monitoring — inotify is used by the JVM's WatchService for monitoring file changes. Kafka uses this for dynamic configuration updates and TLS certificate hot-reloading (ssl.keystore.location changes).",
+      "names": [
+        "inotify_init",
+        "inotify_init1",
+        "inotify_add_watch",
+        "inotify_rm_watch"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Timer file descriptors — timerfd is used by the JVM for high-resolution timer scheduling. Kafka's delayed operation purgatory and scheduled tasks (log retention checks, ISR expiration) rely on precise timer mechanisms.",
+      "names": [
+        "timerfd_create",
+        "timerfd_settime",
+        "timerfd_gettime"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Signal handling — The JVM installs signal handlers for SIGSEGV (null pointer detection, safepoints), SIGBUS (mapped file errors), SIGTERM/SIGINT (graceful shutdown). Kafka's shutdown hook uses SIGTERM to trigger controlled partition leadership handoff before stopping.",
+      "names": [
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "rt_sigpending",
+        "rt_sigtimedwait",
+        "rt_sigsuspend",
+        "sigaltstack",
+        "kill",
+        "tgkill",
+        "tkill"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Process and thread identity — getpid/gettid are used extensively by the JVM for thread management, logging, and lock ownership tracking. Kafka logs include thread IDs for debugging. getuid/getgid are checked during startup to verify the broker is not running as root.",
+      "names": [
+        "getpid",
+        "getppid",
+        "gettid",
+        "getuid",
+        "geteuid",
+        "getgid",
+        "getegid",
+        "getresuid",
+        "getresgid",
+        "getgroups",
+        "setuid",
+        "setgid",
+        "setreuid",
+        "setregid",
+        "setresuid",
+        "setresgid",
+        "setgroups"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Process control — prctl is used by the JVM to set thread names (PR_SET_NAME) which appear in Kafka logs and thread dumps as 'kafka-request-handler-0', 'kafka-network-thread-0', etc. arch_prctl sets the FS/GS segment base on x86_64 for thread-local storage.",
+      "names": [
+        "prctl",
+        "arch_prctl",
+        "set_tid_address",
+        "set_thread_area",
+        "get_thread_area"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Resource limits — The JVM checks and sets resource limits at startup (e.g., max open files for Kafka's many file descriptors across partitions, max memory for heap sizing). Kafka recommends ulimit -n 128000+ for production brokers due to the large number of log segment files.",
+      "names": [
+        "getrlimit",
+        "setrlimit",
+        "prlimit64",
+        "getrusage"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Time and clock — The JVM uses clock_gettime for System.nanoTime() and System.currentTimeMillis(), which Kafka uses for message timestamps, log retention time checks, request latency metrics, and KRaft leader election timeouts. gettimeofday is the fallback time source.",
+      "names": [
+        "clock_gettime",
+        "clock_getres",
+        "clock_nanosleep",
+        "gettimeofday",
+        "nanosleep"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Random number generation — getrandom provides entropy for JVM's SecureRandom, which Kafka uses for TLS session keys, SASL/SCRAM nonces, UUID generation (KRraft topic IDs, directory IDs), and randomized exponential backoff in the Raft protocol.",
+      "names": [
+        "getrandom"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: System information — uname is called by the JVM at startup to determine OS version for platform-specific behavior. sysinfo provides memory/uptime information used by Kafka metrics reporters. getcpu is used by the JVM for NUMA-aware memory allocation.",
+      "names": [
+        "uname",
+        "sysinfo",
+        "getcpu"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Network name resolution — Kafka resolves advertised.listeners hostnames, inter-broker endpoints, and ZooKeeper/KRaft controller addresses at startup and during reconnection. The JVM's InetAddress.getByName() triggers these syscalls through glibc's resolver.",
+      "names": [
+        "gethostname",
+        "sethostname"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Process exit — Required for clean JVM shutdown. Kafka's shutdown hook performs controlled leadership transfer, flushes remaining log segments, and closes all file descriptors before exit.",
+      "names": [
+        "exit",
+        "exit_group"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: File system namespace — pivot_root and chroot may be used by the container runtime during initial setup before Kafka starts. Required for correct container initialization.",
+      "names": [
+        "pivot_root",
+        "chroot",
+        "chdir",
+        "fchdir"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Temporary files — The JVM creates temporary files for JIT compiler spills, heap dumps, and class data sharing archives. Kafka creates temporary files during log compaction (cleaned segments are written to .cleaned suffix before atomic rename).",
+      "names": [
+        "memfd_create",
+        "memfd_secret"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Capabilities — capget/capset are used during container startup to drop unneeded capabilities. The JVM may query capabilities to determine available privileges.",
+      "names": [
+        "capget",
+        "capset"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Namespace operations — setns and unshare may be needed by container runtimes during initial namespace setup before handing control to the JVM entrypoint.",
+      "names": [
+        "setns",
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: seccomp self-application — Allows the container runtime or JVM to apply additional seccomp filters to itself if needed.",
+      "names": [
+        "seccomp"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "ALLOW: Miscellaneous JVM requirements — rseq is used by glibc 2.35+ for restartable sequences (per-CPU data structures). copy_file_range is used by newer JVM versions for efficient file copying during log compaction. splice/tee enable kernel-side data movement.",
+      "names": [
+        "rseq",
+        "copy_file_range",
+        "splice",
+        "tee"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+
+    {
+      "comment": "DISABLED: io_uring — JVM does not use io_uring. Multiple kernel CVEs (CVE-2023-2598, CVE-2023-21400, CVE-2024-0582) make it unnecessary attack surface. Google's kernel team has recommended disabling it in production containers.",
+      "names": [
+        "io_uring_enter",
+        "io_uring_register",
+        "io_uring_setup"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: mount/umount — Kafka has no need to mount or unmount filesystems. Log directories should be pre-mounted via Docker volumes. Allowing mount would permit container escape via bind-mount attacks.",
+      "names": [
+        "mount",
+        "mount_setattr",
+        "umount",
+        "umount2",
+        "move_mount",
+        "open_tree",
+        "fsopen",
+        "fsconfig",
+        "fsmount",
+        "fspick"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: ptrace — Kafka/JVM does not need process tracing. ptrace is a well-known privilege escalation vector that allows reading memory of other processes, injecting code, and bypassing seccomp filters. Debug tools like jstack use JVMTI, not ptrace.",
+      "names": [
+        "ptrace"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kernel module loading — Kafka has absolutely no reason to load or unload kernel modules. Allowing these would permit loading rootkits or malicious kernel code.",
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module",
+        "create_module"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: time modification — Kafka relies on accurate wall-clock time for message timestamps, log retention, and KRaft leader election. Allowing time adjustment could corrupt message ordering, cause premature log deletion, or destabilize the Raft consensus protocol.",
+      "names": [
+        "adjtimex",
+        "clock_adjtime",
+        "clock_settime",
+        "settimeofday"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: personality with UNAME26 — The personality syscall can change process execution domain. UNAME26 makes the kernel report a fake version, which could confuse the JVM's platform detection. No legitimate Kafka use case exists.",
+      "names": [
+        "personality"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: modify_ldt — Modifies the Local Descriptor Table on x86. Only useful for 16-bit or segmented code. The JVM uses a flat memory model and has no need for LDT manipulation. Historically exploited for kernel attacks.",
+      "names": [
+        "modify_ldt"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: POSIX message queues — Kafka uses its own commit log and TCP-based protocol for message passing, not POSIX IPC. These syscalls are unnecessary and expand the kernel attack surface.",
+      "names": [
+        "mq_open",
+        "mq_unlink",
+        "mq_timedsend",
+        "mq_timedreceive",
+        "mq_notify",
+        "mq_getsetattr"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: fanotify — Filesystem-wide monitoring (unlike inotify which is per-file). fanotify_mark with FAN_OPEN_PERM allows intercepting and blocking file access for the entire filesystem. Kafka uses inotify for config watching; fanotify is unnecessary and overprivileged.",
+      "names": [
+        "fanotify_init",
+        "fanotify_mark"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: process_mrelease — Allows releasing memory of a dying process, intended for memory-pressure OOM scenarios. Not applicable to Kafka workloads and is a relatively new syscall with a small attack surface benefit from blocking.",
+      "names": [
+        "process_mrelease"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kexec — Allows loading and executing a new kernel. A compromised Kafka container with kexec access could boot a malicious kernel, achieving full host takeover. No container workload should ever need this.",
+      "names": [
+        "kexec_load",
+        "kexec_file_load"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: reboot — Allows rebooting or powering off the host machine. A container should never have the ability to shut down the host. Kafka handles restarts through orchestration (Docker restart policies, Kubernetes).",
+      "names": [
+        "reboot"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: swap control — swapon/swapoff modify the host's virtual memory configuration. Kafka performance tuning recommends vm.swappiness=1 at the host level, but the broker process itself should never manipulate swap devices.",
+      "names": [
+        "swapon",
+        "swapoff"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: keyring operations — The kernel keyring is not used by the JVM or Kafka. Kafka manages its own keystores (JKS/PKCS12) for TLS and SASL credentials through the Java security provider framework.",
+      "names": [
+        "add_key",
+        "request_key",
+        "keyctl"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kernel performance events — perf_event_open allows access to hardware performance counters and kernel tracepoints. While useful for Kafka performance analysis, it should be enabled only in dedicated profiling sessions, not in production seccomp profiles.",
+      "names": [
+        "perf_event_open"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: BPF — eBPF program loading and map creation. While BPF-based observability is valuable for Kafka debugging, it requires CAP_BPF/CAP_SYS_ADMIN and should not be available to the broker process itself. Use sidecar containers or host-level tools for BPF tracing.",
+      "names": [
+        "bpf"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: userfaultfd — Allows handling page faults in user space. Has been used in kernel exploitation (CVE-2021-22555, CVE-2022-0185) to win race conditions. The JVM does not use userfaultfd; its GC handles page faults internally.",
+      "names": [
+        "userfaultfd"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: process_vm_readv/writev — Cross-process memory access without ptrace. Could be used to read secrets from other containers sharing the same PID namespace. Kafka has no need to access memory of other processes.",
+      "names": [
+        "process_vm_readv",
+        "process_vm_writev"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: kcmp — Compares kernel resources between processes. Information leak that could help an attacker map out the kernel's internal state. No Kafka/JVM use case.",
+      "names": [
+        "kcmp"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: lookup_dcookie — Returns the path of a dentry given its cookie. Used only by oprofile (obsolete profiler). Information leak with no Kafka relevance.",
+      "names": [
+        "lookup_dcookie"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: acct — Process accounting writes a record for every terminated process to a file. Not needed by Kafka and increases kernel surface area.",
+      "names": [
+        "acct"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: quotactl — Filesystem quota management. Kafka's disk usage should be controlled through log.retention.bytes and log.retention.hours configuration, not filesystem quotas applied from within the container.",
+      "names": [
+        "quotactl",
+        "quotactl_fd"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "DISABLED: nfsservctl — NFS server control operations. Kafka should use local or network-attached block storage, not serve NFS from within a container.",
+      "names": [
+        "nfsservctl"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    }
+  ]
+}

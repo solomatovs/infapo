@@ -1,0 +1,58 @@
+services:
+  clickhouse-monitoring:
+    image: ghcr.io/duyet/clickhouse-monitoring:latest@sha256:190e1ec1f52765f723aa468c3bc061cbbf5ad06727af51180e3b373fdb0cb3b1
+    container_name: clickhouse-monitoring
+    hostname: clickhouse-monitoring
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root user
+    user: "1001:1001"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # # read_only disabled: entrypoint.sh patches built files with BASE_PATH at startup
+    # tmpfs:
+    #   - /tmp:size=256M,noexec,nosuid,nodev
+
+    # No external ports - accessed via nginx reverse proxy
+
+    volumes:
+      - ./certs:/etc/clickhouse-monitoring/certs:ro
+
+    environment:
+      CLICKHOUSE_HOST: http://ch01:8123,http://ch02:8123
+      CLICKHOUSE_NAME: ch01,ch02
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: Tn8yB3cJ6fE2wQ5K
+      CLICKHOUSE_TZ: UTC
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - docker
+
+networks:
+  docker:
+    external: true

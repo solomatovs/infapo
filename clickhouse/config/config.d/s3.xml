@@ -1,0 +1,36 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- S3-compatible disk backed by MinIO -->
+            <s3_minio>
+                <type>s3</type>
+                <endpoint>http://minio:9000/clickhouse-data/</endpoint>
+                <access_key_id>admin</access_key_id>
+                <secret_access_key>Xk9mR2vLpQ7wZn3F</secret_access_key>
+                <use_environment_credentials>false</use_environment_credentials>
+            </s3_minio>
+        </disks>
+        <policies>
+            <!-- All data stored in MinIO -->
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3_minio</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+            <!-- Hot data on local disk, cold data on MinIO -->
+            <s3_tiered>
+                <volumes>
+                    <hot>
+                        <disk>default</disk>
+                    </hot>
+                    <cold>
+                        <disk>s3_minio</disk>
+                    </cold>
+                </volumes>
+                <move_factor>0.2</move_factor>
+            </s3_tiered>
+        </policies>
+    </storage_configuration>
+</clickhouse>

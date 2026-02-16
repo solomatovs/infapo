@@ -1,0 +1,569 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 38,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "comment": "Process lifecycle - execve: container init (node), exit/exit_group: normal shutdown",
+      "names": [
+        "execve",
+        "execveat",
+        "exit",
+        "exit_group"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Node.js threads - clone/clone3: Node.js worker threads and libuv thread pool, fork/vfork: needed for child_process",
+      "names": [
+        "clone",
+        "clone3",
+        "fork",
+        "vfork"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Node.js threading - futex: V8 and libuv synchronization, sched_yield: cooperative scheduling, sched_getaffinity: UV_THREADPOOL_SIZE auto-detection",
+      "names": [
+        "futex",
+        "get_robust_list",
+        "set_robust_list",
+        "sched_yield",
+        "sched_getaffinity",
+        "sched_getparam",
+        "sched_getscheduler",
+        "sched_setscheduler"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "V8 memory management - mmap/munmap: V8 heap and compiled code, mprotect: JIT code pages (W^X), madvise: memory hints, brk: native allocator",
+      "names": [
+        "mmap",
+        "munmap",
+        "mprotect",
+        "madvise",
+        "brk",
+        "mremap"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Signal handling - sigaltstack: V8 signal stack, rt_sigaction: crash handlers, tgkill: thread signals",
+      "names": [
+        "sigaltstack",
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "rt_sigpending",
+        "rt_sigsuspend",
+        "rt_sigtimedwait",
+        "kill",
+        "tkill",
+        "tgkill"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "libuv event loop (epoll) - epoll_create1/epoll_ctl/epoll_wait: Node.js event loop uses epoll for ALL async I/O",
+      "names": [
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "epoll_pwait2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Network I/O - socket/bind/listen/accept: Next.js HTTP server on :3000, connect: outbound to ClickHouse HTTP API",
+      "names": [
+        "socket",
+        "socketpair",
+        "bind",
+        "listen",
+        "accept",
+        "accept4",
+        "connect",
+        "getsockname",
+        "getpeername",
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "sendmmsg",
+        "recvmmsg",
+        "shutdown",
+        "setsockopt",
+        "getsockopt"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File I/O (modern openat-based) - openat/openat2: Node.js reads modules, config, static assets",
+      "names": [
+        "openat",
+        "openat2",
+        "close",
+        "read",
+        "readv",
+        "pread64",
+        "write",
+        "writev",
+        "pwrite64",
+        "lseek",
+        "fstat",
+        "fstatat",
+        "newfstatat",
+        "readlinkat",
+        "fstatfs",
+        "fsync",
+        "fdatasync",
+        "ftruncate",
+        "fchmod",
+        "fchown",
+        "flock",
+        "fcntl",
+        "dup",
+        "dup2",
+        "dup3"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Directory operations - getdents64: read directory entries for module resolution, Next.js pages scanning",
+      "names": [
+        "getdents",
+        "getdents64",
+        "mkdirat",
+        "unlinkat",
+        "renameat",
+        "renameat2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Legacy file I/O - open/stat/lstat/statx: Node.js module resolution, access: check file permissions",
+      "names": [
+        "open",
+        "creat",
+        "stat",
+        "lstat",
+        "statx",
+        "access",
+        "faccessat",
+        "faccessat2",
+        "readlink",
+        "unlink",
+        "rmdir",
+        "rename",
+        "mkdir",
+        "chmod",
+        "chown",
+        "lchown"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Pipes and eventfd - pipe2: libuv internal signaling, eventfd2: async notification",
+      "names": [
+        "pipe",
+        "pipe2",
+        "eventfd",
+        "eventfd2"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process/thread info - getpid/gettid: process identification, getuid/getgid: permission checks",
+      "names": [
+        "getpid",
+        "gettid",
+        "getppid",
+        "getpgrp",
+        "getpgid",
+        "setpgid",
+        "getuid",
+        "geteuid",
+        "getgid",
+        "getegid",
+        "getgroups",
+        "setuid",
+        "setgid",
+        "setgroups",
+        "setreuid",
+        "setregid",
+        "setresuid",
+        "setresgid",
+        "getresuid",
+        "getresgid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Time operations - clock_gettime: timestamps, nanosleep: setTimeout/setInterval, gettimeofday: legacy",
+      "names": [
+        "clock_gettime",
+        "clock_getres",
+        "clock_nanosleep",
+        "gettimeofday",
+        "nanosleep",
+        "time"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Timers - timerfd for libuv timers, setitimer for V8 profiling",
+      "names": [
+        "timer_create",
+        "timer_settime",
+        "timer_gettime",
+        "timer_delete",
+        "timerfd_create",
+        "timerfd_settime",
+        "timerfd_gettime",
+        "setitimer",
+        "getitimer",
+        "alarm"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Randomness - getrandom: crypto.randomBytes for TLS, session tokens",
+      "names": [
+        "getrandom"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "I/O multiplexing - poll/select: legacy I/O multiplexing, some native addons use these",
+      "names": [
+        "poll",
+        "ppoll",
+        "select",
+        "pselect6"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process resource limits - getrlimit/setrlimit: Node.js checks file descriptor limits",
+      "names": [
+        "getrlimit",
+        "setrlimit",
+        "prlimit64"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Thread-local storage - arch_prctl: x86_64 TLS setup for V8 isolates, set_tid_address: thread exit notification",
+      "names": [
+        "arch_prctl",
+        "set_tid_address",
+        "set_thread_area",
+        "get_thread_area"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "prctl operations - prctl: V8 uses PR_SET_NAME for thread naming",
+      "names": [
+        "prctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Inotify - inotify for file watching (Next.js hot reload in dev, config watching)",
+      "names": [
+        "inotify_init",
+        "inotify_init1",
+        "inotify_add_watch",
+        "inotify_rm_watch"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "uname - uname: OS detection for Node.js os module",
+      "names": [
+        "uname",
+        "sysinfo"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Filesystem attributes - statfs: check disk space, getxattr: extended attributes",
+      "names": [
+        "statfs",
+        "fstatfs",
+        "ustat",
+        "getxattr",
+        "lgetxattr",
+        "fgetxattr",
+        "listxattr",
+        "llistxattr",
+        "flistxattr"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "wait operations - wait4/waitid: wait for child processes",
+      "names": [
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "umask - umask: set file creation mask",
+      "names": [
+        "umask"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "getcwd - getcwd: get current working directory, used by Node.js path resolution",
+      "names": [
+        "getcwd",
+        "chdir",
+        "fchdir"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "capset/capget - capability management",
+      "names": [
+        "capget",
+        "capset"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "DISABLED: mount/umount — ClickHouse Monitoring does not need to mount filesystems",
+      "names": [
+        "mount",
+        "umount",
+        "umount2",
+        "pivot_root",
+        "chroot"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: ptrace — Debugging/introspection not needed in production. Security risk for container escape",
+      "names": [
+        "ptrace",
+        "process_vm_readv",
+        "process_vm_writev"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: io_uring — Node.js does not use io_uring. Multiple kernel CVEs",
+      "names": [
+        "io_uring_setup",
+        "io_uring_enter",
+        "io_uring_register"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: clock manipulation — Should not modify system time",
+      "names": [
+        "adjtimex",
+        "clock_adjtime",
+        "clock_settime",
+        "settimeofday",
+        "stime"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: personality with UNAME26 — Used to bypass security checks",
+      "names": [],
+      "action": "SCMP_ACT_ERRNO",
+      "args": [
+        {
+          "index": 0,
+          "value": 131072,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "comment": "DISABLED: modify_ldt — x86 segment manipulation, legacy feature, security risk",
+      "names": [
+        "modify_ldt"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: POSIX message queues — Not used by Node.js or Next.js",
+      "names": [
+        "mq_open",
+        "mq_timedsend",
+        "mq_timedreceive",
+        "mq_notify",
+        "mq_getsetattr",
+        "mq_unlink"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: fanotify — Filesystem event monitoring not needed, inotify is sufficient",
+      "names": [
+        "fanotify_init",
+        "fanotify_mark"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: process_mrelease — OOM killer optimization, not needed",
+      "names": [
+        "process_mrelease"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: system reboot/shutdown — Should never reboot the system",
+      "names": [
+        "kexec_load",
+        "kexec_file_load",
+        "reboot",
+        "swapon",
+        "swapoff"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: kernel modules — Does not load kernel modules",
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: BPF — eBPF is a kernel programming interface. Major security risk",
+      "names": [
+        "bpf"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: userfaultfd — Userspace page fault handling. Known container escape vector",
+      "names": [
+        "userfaultfd"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: keyring operations — Kernel keyring not used",
+      "names": [
+        "add_key",
+        "request_key",
+        "keyctl"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: perf_event_open — Performance monitoring not needed in production",
+      "names": [
+        "perf_event_open"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: quotactl — Filesystem quota management not needed",
+      "names": [
+        "quotactl"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: lookup_dcookie — oprofile support, not used",
+      "names": [
+        "lookup_dcookie"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: kcmp — Compare kernel objects, debugging tool, not needed",
+      "names": [
+        "kcmp"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: name_to_handle_at/open_by_handle_at — NFS file handle operations, not used",
+      "names": [
+        "name_to_handle_at",
+        "open_by_handle_at"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: acct — Process accounting, not needed",
+      "names": [
+        "acct"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: nfsservctl — NFS server control, not applicable",
+      "names": [
+        "nfsservctl"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: seccomp — Should not modify its own seccomp policy at runtime",
+      "names": [
+        "seccomp"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: vmsplice/tee/splice — Advanced pipe operations, potential security issues",
+      "names": [
+        "vmsplice",
+        "tee",
+        "splice"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: remap_file_pages — Deprecated in kernel",
+      "names": [
+        "remap_file_pages"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "DISABLED: mbind/set_mempolicy/get_mempolicy — NUMA memory policy, not needed",
+      "names": [
+        "mbind",
+        "set_mempolicy",
+        "get_mempolicy",
+        "migrate_pages",
+        "move_pages"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}

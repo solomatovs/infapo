@@ -1,0 +1,59 @@
+services:
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:25.3.4
+    container_name: cloudbeaver
+    hostname: cloudbeaver
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # tmpfs:
+    #   - /tmp:size=256M,noexec,nosuid,nodev
+
+    # No external ports - accessed via nginx reverse proxy
+
+    volumes:
+      - cloudbeaver-workspace:/opt/cloudbeaver/workspace
+
+    environment:
+      CLOUDBEAVER_ROOT_URI: /boroda/cloudbeaver/
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8978/boroda/cloudbeaver/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - docker
+
+volumes:
+  cloudbeaver-workspace:
+    name: cloudbeaver-workspace
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/cloudbeaver-workspace
+
+networks:
+  docker:
+    external: true

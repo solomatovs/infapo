@@ -1,0 +1,438 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 38,
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": [
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+      ]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": [
+        "SCMP_ARCH_ARM"
+      ]
+    }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "accept",
+        "accept4",
+        "bind",
+        "connect",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "recvfrom",
+        "recvmsg",
+        "sendmsg",
+        "sendto",
+        "setsockopt",
+        "shutdown",
+        "socket",
+        "socketpair"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Network socket operations - nginx's core HTTP/HTTPS server functionality. accept4 for accepting client connections, bind/listen for port binding, connect for upstream proxy connections, setsockopt for TCP_NODELAY/SO_REUSEADDR/SO_KEEPALIVE optimizations"
+    },
+    {
+      "names": [
+        "open",
+        "openat",
+        "close",
+        "read",
+        "write",
+        "readv",
+        "writev",
+        "pread64",
+        "pwrite64",
+        "preadv",
+        "preadv2",
+        "pwritev",
+        "pwritev2",
+        "lseek",
+        "ftruncate",
+        "fallocate"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Standard file I/O - serving static files, reading config, writing logs. writev for scatter-gather I/O, pwritev/preadv for proxy temp file buffering, fallocate/ftruncate for temp file management"
+    },
+    {
+      "names": [
+        "stat",
+        "statx",
+        "fstat",
+        "lstat",
+        "newfstatat",
+        "statfs",
+        "fstatfs",
+        "access",
+        "faccessat",
+        "faccessat2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File metadata operations - checking file existence, permissions, size for static file serving and config validation"
+    },
+    {
+      "names": [
+        "sendfile",
+        "sendfile64",
+        "splice",
+        "tee",
+        "vmsplice"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Zero-copy file serving - sendfile for static files, splice/tee for proxied content piping between sockets without userspace copies"
+    },
+    {
+      "names": [
+        "mmap",
+        "munmap",
+        "mprotect",
+        "madvise",
+        "mremap",
+        "msync",
+        "mlock",
+        "mlock2",
+        "munlock"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Memory management - shared memory zones for proxy cache, rate limiting, sticky sessions. mmap for shared memory, mprotect for permission changes, msync for cache persistence, mlock/munlock for OpenSSL private key protection in RAM"
+    },
+    {
+      "names": [
+        "brk",
+        "mmap",
+        "munmap"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Heap management - standard memory allocation for nginx's memory pools"
+    },
+    {
+      "names": [
+        "epoll_create",
+        "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait",
+        "epoll_pwait",
+        "epoll_pwait2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Event loop - nginx's core asynchronous I/O model. epoll_wait handles thousands of concurrent connections efficiently in the event-driven architecture"
+    },
+    {
+      "names": [
+        "poll",
+        "ppoll",
+        "select",
+        "pselect6"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Alternative I/O multiplexing - fallback mechanisms for systems without epoll support"
+    },
+    {
+      "names": [
+        "clone",
+        "clone3",
+        "fork",
+        "vfork"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process creation - nginx master process spawns worker processes based on worker_processes directive. Each worker handles connections independently"
+    },
+    {
+      "names": [
+        "execve",
+        "execveat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process execution - needed for executing external programs in certain nginx modules or during process initialization"
+    },
+    {
+      "names": [
+        "wait4",
+        "waitid"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process management - master process waits for worker process termination, handles worker crashes and restarts"
+    },
+    {
+      "names": [
+        "futex",
+        "get_robust_list",
+        "set_robust_list"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Synchronization primitives - futex for inter-worker synchronization when accessing shared memory zones (accept_mutex, cache locks)"
+    },
+    {
+      "names": [
+        "rt_sigaction",
+        "rt_sigprocmask",
+        "rt_sigreturn",
+        "sigaltstack",
+        "rt_sigsuspend",
+        "rt_sigpending",
+        "rt_sigtimedwait"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Signal handling - SIGHUP for graceful config reload, SIGTERM/SIGQUIT for shutdown, SIGCHLD for worker process monitoring, SIGUSR1 for log rotation"
+    },
+    {
+      "names": [
+        "kill",
+        "tkill",
+        "tgkill"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Signal sending - master process sends signals to workers for shutdown/reload operations"
+    },
+    {
+      "names": [
+        "setuid",
+        "setgid",
+        "setgroups",
+        "setreuid",
+        "setregid",
+        "setresuid",
+        "setresgid"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Privilege dropping - nginx starts as root to bind port 80/443, then drops to nginx user (configured via user directive) for security"
+    },
+    {
+      "names": [
+        "chown",
+        "fchown",
+        "fchownat",
+        "lchown",
+        "chmod",
+        "fchmod",
+        "fchmodat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File permission management - needed when nginx creates log files, pid files, or temporary files with proper ownership"
+    },
+    {
+      "names": [
+        "getuid",
+        "geteuid",
+        "getgid",
+        "getegid",
+        "getgroups"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Identity queries - checking current user/group during privilege operations"
+    },
+    {
+      "names": [
+        "prctl",
+        "arch_prctl",
+        "set_tid_address"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process control - prctl for setting process title, arch_prctl for TLS setup, set_tid_address for thread init"
+    },
+    {
+      "names": [
+        "ioctl"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Device I/O control - FIONBIO for non-blocking socket mode, FIONREAD for bytes available, terminal control for TTY detection"
+    },
+    {
+      "names": [
+        "fcntl",
+        "fcntl64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File descriptor control - F_SETFL for O_NONBLOCK, F_SETFD for FD_CLOEXEC, F_GETFL/F_GETFD queries"
+    },
+    {
+      "names": [
+        "flock"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File locking - pid file locking to prevent multiple nginx instances from starting with the same config"
+    },
+    {
+      "names": [
+        "sched_setaffinity",
+        "sched_getaffinity"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "CPU affinity - worker_cpu_affinity directive binds worker processes to specific CPU cores for cache locality and performance"
+    },
+    {
+      "names": [
+        "sched_yield",
+        "nanosleep",
+        "clock_nanosleep"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Scheduling - cooperative multitasking and sleep operations"
+    },
+    {
+      "names": [
+        "getpid",
+        "gettid",
+        "getppid",
+        "getpgid",
+        "setpgid"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process identification - getting PIDs for logging, worker management, pid file writing"
+    },
+    {
+      "names": [
+        "getcwd",
+        "chdir",
+        "fchdir"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Directory operations - working directory management for relative path resolution"
+    },
+    {
+      "names": [
+        "getdents",
+        "getdents64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Directory listing - autoindex module for directory browsing, config file scanning"
+    },
+    {
+      "names": [
+        "readlink",
+        "readlinkat"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Symlink resolution - following symlinks for document root, config includes, log file locations"
+    },
+    {
+      "names": [
+        "unlink",
+        "unlinkat",
+        "rename",
+        "renameat",
+        "renameat2",
+        "mkdir",
+        "mkdirat",
+        "rmdir"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File system modifications - creating temp directories for client body buffering, managing proxy temp files, log rotation"
+    },
+    {
+      "names": [
+        "dup",
+        "dup2",
+        "dup3"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File descriptor duplication - redirecting stderr/stdout for daemon mode, duplicating sockets for inheritance"
+    },
+    {
+      "names": [
+        "pipe",
+        "pipe2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "IPC pipes - potential use in nginx modules or helper process communication"
+    },
+    {
+      "names": [
+        "umask"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "File creation mask - setting default permissions for created files and directories"
+    },
+    {
+      "names": [
+        "getrlimit",
+        "setrlimit",
+        "prlimit64"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Resource limits - worker_rlimit_nofile directive sets max open file descriptors, RLIMIT_CORE for core dumps"
+    },
+    {
+      "names": [
+        "getrusage"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Resource usage stats - monitoring worker process resource consumption"
+    },
+    {
+      "names": [
+        "uname"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "System information - kernel version detection for feature availability checks"
+    },
+    {
+      "names": [
+        "clock_gettime",
+        "clock_getres",
+        "gettimeofday",
+        "time"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Time queries - HTTP date headers, access log timestamps, timeout calculations, rate limiting"
+    },
+    {
+      "names": [
+        "getrandom"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Random number generation - session IDs, security tokens, load balancing randomization"
+    },
+    {
+      "names": [
+        "exit",
+        "exit_group"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Process termination - clean worker shutdown, exit after fatal errors"
+    },
+    {
+      "names": [
+        "capget",
+        "capset"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Capability management - querying and setting Linux capabilities during privilege operations"
+    },
+    {
+      "names": [
+        "io_setup",
+        "io_destroy",
+        "io_submit",
+        "io_getevents",
+        "io_cancel"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Linux AIO - asynchronous I/O for file operations (alternative to thread pool for file I/O, used with aio directive)"
+    },
+    {
+      "names": [
+        "eventfd",
+        "eventfd2"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Event notification - lightweight event signaling mechanism for worker coordination"
+    },
+    {
+      "names": [
+        "timerfd_create",
+        "timerfd_settime",
+        "timerfd_gettime"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "Timer operations - connection timeouts, keepalive timeouts, resolver timeouts"
+    }
+  ]
+}

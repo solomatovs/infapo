@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <macros>
+        <shard>01</shard>
+        <replica>ch02</replica>
+        <cluster>boroda_cluster</cluster>
+    </macros>
+</clickhouse>

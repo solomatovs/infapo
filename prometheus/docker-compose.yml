@@ -1,0 +1,175 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    container_name: prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root nobody user (65534:65534 in official image)
+    user: "65534:65534"
+ 
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=seccomp.json
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=256M,noexec,nosuid,nodev
+
+    # No external ports - accessed via nginx reverse proxy
+
+    # External configs and data
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./certs:/etc/prometheus/certs:ro
+      - prometheus-data:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=50GB'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.external-url=/boroda/prometheus'
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/boroda/prometheus/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - docker
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: blackbox-exporter
+    hostname: blackbox-exporter
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root nobody user
+    user: "65534:65534"
+
+    # Allow unprivileged ICMP for non-root user
+    sysctls:
+      net.ipv4.ping_group_range: "0 65534"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # read_only: true
+    # tmpfs:
+    #   - /tmp:size=256M,noexec,nosuid,nodev
+
+    volumes:
+      - ./config/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+    command:
+      - '--config.file=/etc/blackbox_exporter/config.yml'
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+        reservations:
+          memory: 32M
+          cpus: "0.1"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9115/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - docker
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.16.0
+    container_name: mysqld-exporter
+    hostname: mysqld-exporter
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root nobody user
+    user: "65534:65534"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # read_only: true
+    # tmpfs:
+    #   - /tmp:size=256M,noexec,nosuid,nodev
+
+    environment:
+      # TODO: replace with actual MySQL address and credentials
+      MYSQLD_EXPORTER_PASSWORD: "CHANGE_ME"
+
+    command:
+      - '--mysqld.address=mysql:3306'
+      - '--mysqld.username=exporter'
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+        reservations:
+          memory: 32M
+          cpus: "0.1"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9104/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - docker
+
+volumes:
+  prometheus-data:
+    name: prometheus-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/prometheus-data
+
+networks:
+  docker:
+    external: true

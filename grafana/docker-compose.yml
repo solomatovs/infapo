@@ -1,0 +1,71 @@
+services:
+  grafana:
+    image: grafana/grafana-oss:12.3.3
+    container_name: grafana
+    hostname: grafana
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root grafana user (472:472 in official image)
+    user: "472:472"
+
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=seccomp.json
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=256M,noexec,nosuid,nodev
+
+    # No external ports - accessed via nginx reverse proxy
+
+    # External configs and data
+    volumes:
+      - ./config/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./config/provisioning:/etc/grafana/provisioning:ro
+      - ./config/dashboards:/etc/grafana/dashboards:ro
+      - ./certs:/etc/grafana/certs:ro
+      - grafana-data:/var/lib/grafana
+
+    environment:
+      GF_PATHS_CONFIG: /etc/grafana/grafana.ini
+      GF_PATHS_DATA: /var/lib/grafana
+      GF_PATHS_PLUGINS: /var/lib/grafana/plugins
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/boroda/grafana/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - docker
+
+volumes:
+  grafana-data:
+    name: grafana-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/grafana-data
+
+networks:
+  docker:
+    external: true

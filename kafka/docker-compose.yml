@@ -1,0 +1,285 @@
+services:
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: kafka
+    hostname: kafka
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Run as non-root appuser (1000:1000 in apache/kafka image)
+    user: "1000:1000"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # read_only: true
+    # tmpfs:
+    #   - /tmp:size=512M,noexec,nosuid,nodev
+
+    # Ports exposed only inside docker network
+    ports:
+      - "9094:9094"     # SASL_SSL listener (external)
+
+    # External configs and data
+    volumes:
+      - ./config/server.properties:/etc/kafka/server.properties:ro
+      - ./config/kafka-server-jaas.conf:/etc/kafka/kafka-server-jaas.conf:ro
+      - ./config/client.properties:/etc/kafka/client.properties:ro
+      - ./certs:/etc/kafka/certs:ro
+      - kafka-data:/var/lib/kafka/data
+      - kafka-metadata:/var/lib/kafka/metadata
+      - kafka-logs:/opt/kafka/logs
+
+    # Override entrypoint to use custom config
+    environment:
+      KAFKA_CLUSTER_ID: ${KAFKA_CLUSTER_ID:-}
+      KAFKA_LOG4J_ROOT_LOGLEVEL: "INFO"
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka-server-jaas.conf"
+
+    command:
+      - /opt/kafka/bin/kafka-server-start.sh
+      - /etc/kafka/server.properties
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4"
+        reservations:
+          memory: 1G
+          cpus: "0.5"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    networks:
+      - docker
+
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.9.0
+    container_name: schema-registry
+    hostname: schema-registry
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_MECHANISM: PLAIN
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="Tn8yB3cJ6fE2wQ5K";'
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    networks:
+      - docker
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.9.0
+    container_name: kafka-connect
+    hostname: kafka-connect
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    volumes:
+      - ./plugins:/opt/kafka-connect/plugins
+
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_PORT: 8083
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_GROUP_ID: connect-cluster
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_PLUGIN_PATH: /usr/share/java,/opt/kafka-connect/plugins
+      CONNECT_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      CONNECT_SASL_MECHANISM: PLAIN
+      CONNECT_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="Tn8yB3cJ6fE2wQ5K";'
+      CONNECT_PRODUCER_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      CONNECT_PRODUCER_SASL_MECHANISM: PLAIN
+      CONNECT_PRODUCER_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="Tn8yB3cJ6fE2wQ5K";'
+      CONNECT_CONSUMER_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      CONNECT_CONSUMER_SASL_MECHANISM: PLAIN
+      CONNECT_CONSUMER_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="Tn8yB3cJ6fE2wQ5K";'
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+        reservations:
+          memory: 512M
+          cpus: "0.25"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8083/connectors || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+
+    networks:
+      - docker
+
+  ksqldb:
+    image: confluentinc/cp-ksqldb-server:7.9.0
+    container_name: ksqldb
+    hostname: ksqldb
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    environment:
+      KSQL_BOOTSTRAP_SERVERS: kafka:9092
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_KSQL_SERVICE_ID: boroda-ksqldb
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KSQL_KSQL_CONNECT_URL: http://kafka-connect:8083
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: "true"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: "true"
+      KSQL_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KSQL_SASL_MECHANISM: PLAIN
+      KSQL_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="Tn8yB3cJ6fE2wQ5K";'
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+        reservations:
+          memory: 512M
+          cpus: "0.25"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8088/info || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+
+    networks:
+      - docker
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: kafka-exporter
+    hostname: kafka-exporter
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    command:
+      - '--kafka.server=kafka:9092'
+      - '--sasl.enabled'
+      - '--sasl.mechanism=plain'
+      - '--sasl.username=admin'
+      - '--sasl.password=Tn8yB3cJ6fE2wQ5K'
+      - '--topic.filter=.*'
+      - '--group.filter=.*'
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+        reservations:
+          memory: 64M
+          cpus: "0.1"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9308/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    networks:
+      - docker
+
+volumes:
+  kafka-data:
+    name: kafka-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/kafka-data
+  kafka-metadata:
+    name: kafka-metadata
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/kafka-metadata
+  kafka-logs:
+    name: kafka-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/kafka-logs
+
+networks:
+  docker:
+    external: true

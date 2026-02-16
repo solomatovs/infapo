@@ -1,0 +1,106 @@
+services:
+  nginx:
+    build: ../../build/nginx
+    image: nginx:1.27-alpine-custom
+    container_name: nginx
+    hostname: nginx
+    restart: unless-stopped
+    labels:
+      "docker-prometheus-exporter.metric.container_health.enabled": "true"
+
+    # Security hardening
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - seccomp=seccomp.json
+    # cap_drop:
+    #   - ALL
+    # cap_add:
+    #   - NET_BIND_SERVICE
+    #   - SETUID
+    #   - SETGID
+    #   - CHOWN
+    #   - DAC_OVERRIDE
+    # tmpfs:
+    #   - /tmp:size=256M,noexec,nosuid,nodev
+    #   - /var/cache/nginx:size=256M,noexec,nosuid,nodev
+    #   - /run:size=16M,noexec,nosuid,nodev
+
+    # Standard ports exposed to host
+    ports:
+      - "80:80"
+      - "443:443"
+      - "10000:10000"
+
+    # External configs and data
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/servers:/etc/nginx/conf.d/servers:ro
+      - ./config/options:/etc/nginx/conf.d/options:ro
+      - ./config/passwords:/etc/nginx/conf.d/passwords:ro
+      - ./config/templates:/etc/nginx/conf.d/templates:ro
+      - ./pages:/etc/nginx/pages:ro
+      - ./certs:/etc/nginx/certs:ro
+      - nginx-logs:/var/log/nginx
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "2"
+        reservations:
+          memory: 64M
+          cpus: "0.25"
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - docker
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4
+    container_name: nginx-exporter
+    hostname: nginx-exporter
+    restart: unless-stopped
+
+    command:
+      - '--nginx.scrape-uri=http://nginx:80/stub_status'
+
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+        reservations:
+          memory: 32M
+          cpus: "0.1"
+
+    # Health check disabled: scratch image has no shell or HTTP client
+    healthcheck:
+      test: ["NONE"]
+
+    depends_on:
+      nginx:
+        condition: service_healthy
+
+    networks:
+      - docker
+
+volumes:
+  nginx-logs:
+    name: nginx-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /app/docker/volumes/nginx-logs
+
+networks:
+  docker:
+    external: true
