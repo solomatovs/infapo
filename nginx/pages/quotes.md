@@ -10,24 +10,42 @@
 ## Архитектура
 
 ```
-                        Kafka                            ClickHouse
-                   ┌──────────────┐
-  RT provider ───► │ quotes       │
-                   └──────┬───────┘
-                          │
-                          ▼
-                   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-                   │ kafka_quotes │───►│ mv_kafka_quotes_to_quotes │───►│              │
-                   └──────────────┘    └──────────────┘    │              │    ┌──────────────┐
-                                                           │ quotes │───►│mv_quotes_to_ohlc│
-                   ┌──────────────────────┐    ┌────────── │              │    └──────┬───────┘
-                   │ kafka_quotes_history  │───►│quotes_   ││              │           │
-                   └──────────┬───────────┘    │history_mv│└──────────────┘    ┌──────▼───────┐
-                              │                └──────────┘                    │ ohlc  │
-                              │                                               └──────────────┘
-                   ┌──────────┴───────────┐
-  History loader ► │ quotes_history       │
-                   └──────────────────────┘
+══════════════════════════════════════════════════════════════════════
+                              KAFKA
+══════════════════════════════════════════════════════════════════════
+
+ RT provider ►  ┌──────────────┐          ┌────────────────────┐  ◄ History loader
+                │    quotes    │          │   quotes_history   │
+                └──────┬───────┘          └─────────┬──────────┘
+                       │                            │
+═══════════════════════╪════════════════════════════╪═════════════════
+                       │        CLICKHOUSE          │
+═══════════════════════╪════════════════════════════╪═════════════════
+                       ▼                            ▼
+            ┌──────────────────┐       ┌────────────────────────┐
+            │   kafka_quotes   │       │ kafka_quotes_history   │
+            └────────┬─────────┘       └───────────┬────────────┘
+                     │                             │
+                     ▼                             ▼
+  ┌─────────────────────────────┐   ┌────────────────────────────────────┐
+  │ mv_kafka_quotes_to_quotes   │   │ mv_kafka_quotes_history_to_quotes  │
+  └──────────────┬──────────────┘   └─────────────────┬──────────────────┘
+                 │                                    │
+                 └─────────────────┬──────────────────┘
+                                   ▼
+                           ┌──────────────┐
+                           │    quotes    │
+                           └──────┬───────┘
+                                  │
+                                  ▼
+                        ┌───────────────────┐
+                        │ mv_quotes_to_ohlc │
+                        └─────────┬─────────┘
+                                  │
+                                  ▼
+                           ┌────────────┐
+                           │    ohlc    │
+                           └────────────┘
 ```
 
 ### Объекты pipeline (7 штук)
@@ -77,8 +95,9 @@
 
 ```bash
 # ─── Подключения ───
+set -a allexport
 CH_CONTAINER=ch01
-CH_USER='<CLICKHOUSE_USER>'
+CH_USER='<>'
 CH_PASSWORD='<CLICKHOUSE_PASSWORD>'
 
 KAFKA_CONTAINER=kafka
@@ -104,57 +123,67 @@ TABLE_KAFKA_HISTORY=kafka_quotes_history
 MV_KAFKA_RT=mv_kafka_quotes_to_quotes
 MV_KAFKA_HISTORY=mv_kafka_quotes_history_to_quotes
 MV_OHLC=mv_quotes_to_ohlc
+set +a allexport
 ```
 
 ---
 
-## 1. drop_and_create — Пересоздание инфраструктуры
+## 1. backup_and_create — Пересоздание инфраструктуры с бекапом
 
-Полное пересоздание pipeline с нуля. **Все данные теряются.**
+Пересоздание pipeline с нуля. Таблицы с данными (`quotes`, `ohlc`) бекапятся через `EXCHANGE TABLES` — данные сохраняются в `*_bak_YYYYMMDD_HHMMSS`.
 
-Порядок строгий: DROP ClickHouse → удаление consumer groups и топиков → создание топиков → CREATE ClickHouse → DETACH Kafka.
+Порядок: DROP зависимостей → бекап данных → удаление Kafka → CREATE pipeline → DETACH Kafka.
 
 ```bash
-# ─── 1. ClickHouse: DROP (MVs → Kafka Engine → Storage) ───
+BAK_SUFFIX="_bak_$(date -u +%Y%m%d_%H%M%S)"
+
+# ─── 1. ClickHouse: ATTACH detached + DROP зависимостей (MVs + Kafka Engine) ───
+# DROP IF EXISTS не видит detached таблицы — сначала ATTACH всё, что могло быть detached
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY $MV_OHLC $MV_KAFKA_RT $MV_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "ATTACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -qE "already exists|does.?n.?t exist" || \
+  { echo "ATTACH $TBL failed: $ERR" >&2; exit 1; }
+done
+
 docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
 DROP VIEW IF EXISTS $MV_OHLC;
 DROP VIEW IF EXISTS $MV_KAFKA_RT;
 DROP VIEW IF EXISTS $MV_KAFKA_HISTORY;
 DROP TABLE IF EXISTS $TABLE_KAFKA_RT;
 DROP TABLE IF EXISTS $TABLE_KAFKA_HISTORY;
-DROP TABLE IF EXISTS $TABLE_QUOTES;
-DROP TABLE IF EXISTS $TABLE_OHLC;
 CHSQL
 
-# ─── 2. Kafka: удалить consumer groups и топики ───
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --group $CG_RT 2>/dev/null || true
+# ─── 2. Бекап таблиц с данными (CREATE дубликат → EXCHANGE) ───
+# После EXCHANGE: оригинал пустой (готов к использованию), бекап хранит данные
+for TBL in $TABLE_QUOTES $TABLE_OHLC; do
+  EXISTS=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "EXISTS TABLE $TBL")
+  if [ "$EXISTS" = "1" ]; then
+    docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
+CREATE TABLE ${TBL}${BAK_SUFFIX} AS $TBL;
+EXCHANGE TABLES $TBL AND ${TBL}${BAK_SUFFIX};
+CHSQL
+    echo "Бекап: $TBL → ${TBL}${BAK_SUFFIX}"
+  fi
+done
 
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --group $CG_HISTORY 2>/dev/null || true
+# ─── 3. Kafka: удалить и пересоздать топики ───
+docker exec -i $KAFKA_CONTAINER bash << KAFKA
+OPTS="--bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties"
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --delete --group $CG_RT 2>/dev/null || true
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --delete --group $CG_HISTORY 2>/dev/null || true
+/opt/kafka/bin/kafka-topics.sh \$OPTS --delete --topic $TOPIC_RT 2>/dev/null || true
+/opt/kafka/bin/kafka-topics.sh \$OPTS --delete --topic $TOPIC_HISTORY 2>/dev/null || true
+sleep 2
+/opt/kafka/bin/kafka-topics.sh \$OPTS --create --if-not-exists --topic $TOPIC_RT --partitions 1 --replication-factor 1
+/opt/kafka/bin/kafka-topics.sh \$OPTS --create --if-not-exists --topic $TOPIC_HISTORY --partitions 1 --replication-factor 1
+KAFKA
 
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --topic $TOPIC_RT 2>/dev/null || true
-
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --topic $TOPIC_HISTORY 2>/dev/null || true
-
-# ─── 3. Kafka: создать топики ───
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --create --topic $TOPIC_RT --partitions 1 --replication-factor 1
-
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --create --topic $TOPIC_HISTORY --partitions 1 --replication-factor 1
-
-# ─── 4. ClickHouse: CREATE (Storage → Kafka Engine → MVs) + DETACH ───
+# ─── 4. ClickHouse: CREATE IF NOT EXISTS (Storage) + CREATE (Kafka Engine → MVs) + DETACH ───
+# Storage таблицы уже существуют (пустые после EXCHANGE), IF NOT EXISTS — для первого запуска
 docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-CREATE TABLE $TABLE_QUOTES (
+CREATE TABLE IF NOT EXISTS $TABLE_QUOTES (
     ts     DateTime64(3),
     symbol String,
     bid    Float64,
@@ -162,7 +191,7 @@ CREATE TABLE $TABLE_QUOTES (
 ) ENGINE = ReplacingMergeTree()
 ORDER BY (symbol, ts);
 
-CREATE TABLE $TABLE_OHLC (
+CREATE TABLE IF NOT EXISTS $TABLE_OHLC (
     tf     LowCardinality(String),
     symbol LowCardinality(String),
     ts     DateTime64(3, 'UTC'),
@@ -238,12 +267,13 @@ FROM (
          '4h', '1d', '1w', '1y'] AS tf
     GROUP BY tf, symbol, bucket
 );
-
-DETACH TABLE $TABLE_KAFKA_RT;
-DETACH TABLE $TABLE_KAFKA_HISTORY;
 CHSQL
 ```
 
+> **EXCHANGE TABLES** — атомарная подмена: `quotes` ↔ `quotes_bak_*`. В момент обмена таблица всегда существует (в отличие от RENAME), конкурентные запросы не получат `UNKNOWN_TABLE`.
+>
+> **Бекапы** остаются в базе как обычные таблицы. Посмотреть: `SELECT name FROM system.tables WHERE name LIKE '%_bak_%'`. Удалить: `DROP TABLE quotes_bak_20260216_120000`.
+>
 > **Почему CREATE Kafka → CREATE MV → DETACH Kafka?**
 > MV нельзя создать на detached таблицу (`UNKNOWN_TABLE`).
 > После DETACH MVs остаются на месте и будут работать после ATTACH.
@@ -259,19 +289,19 @@ CHSQL
 
 ```bash
 # ─── 1. Kafka: создать топики (если не существуют) ───
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --create --if-not-exists --topic $TOPIC_RT --partitions 1 --replication-factor 1
-
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --create --if-not-exists --topic $TOPIC_HISTORY --partitions 1 --replication-factor 1
+docker exec -i $KAFKA_CONTAINER bash << KAFKA
+OPTS="--bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties"
+/opt/kafka/bin/kafka-topics.sh \$OPTS --create --if-not-exists --topic $TOPIC_RT --partitions 1 --replication-factor 1
+/opt/kafka/bin/kafka-topics.sh \$OPTS --create --if-not-exists --topic $TOPIC_HISTORY --partitions 1 --replication-factor 1
+KAFKA
 
 # ─── 2. ClickHouse: ATTACH Kafka таблицы (если в detached — иначе CREATE IF NOT EXISTS не увидит) ───
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "ATTACH TABLE $TABLE_KAFKA_RT" 2>/dev/null || true
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "ATTACH TABLE $TABLE_KAFKA_HISTORY" 2>/dev/null || true
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "ATTACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -qE "already exists|does.?n.?t exist" || \
+  { echo "ATTACH $TBL failed: $ERR" >&2; exit 1; }
+done
 
 # ─── 3. ClickHouse: CREATE IF NOT EXISTS (Storage → Kafka Engine → MVs) ───
 docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
@@ -359,10 +389,6 @@ FROM (
          '4h', '1d', '1w', '1y'] AS tf
     GROUP BY tf, symbol, bucket
 );
-
--- ═══ DETACH Kafka (pipeline создан, но не потребляет) ═══
-DETACH TABLE $TABLE_KAFKA_RT;
-DETACH TABLE $TABLE_KAFKA_HISTORY;
 CHSQL
 ```
 
@@ -376,61 +402,99 @@ MVs при этом остаются на месте — трогать их н�
 **Включить всё:**
 
 ```bash
-docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-ATTACH TABLE $TABLE_KAFKA_RT;
-ATTACH TABLE $TABLE_KAFKA_HISTORY;
-CHSQL
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "ATTACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -q "already exists" || \
+  { echo "ATTACH $TBL failed: $ERR" >&2; exit 1; }
+done
 ```
 
 **Выключить всё:**
 
 ```bash
-docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-DETACH TABLE $TABLE_KAFKA_RT;
-DETACH TABLE $TABLE_KAFKA_HISTORY;
-CHSQL
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "DETACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -qE "does.?n.?t exist" || \
+  { echo "DETACH $TBL failed: $ERR" >&2; exit 1; }
+done
 ```
 
 **Только RT (kafka_quotes):**
 
 ```bash
 # Включить
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "ATTACH TABLE $TABLE_KAFKA_RT"
+ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+  --query "ATTACH TABLE $TABLE_KAFKA_RT" 2>&1) || \
+echo "$ERR" | grep -q "already exists" || \
+{ echo "ATTACH failed: $ERR" >&2; exit 1; }
 
 # Выключить
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "DETACH TABLE $TABLE_KAFKA_RT"
+ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+  --query "DETACH TABLE $TABLE_KAFKA_RT" 2>&1) || \
+echo "$ERR" | grep -qE "does.?n.?t exist" || \
+{ echo "DETACH failed: $ERR" >&2; exit 1; }
 ```
 
 **Только History (kafka_quotes_history):**
 
 ```bash
 # Включить
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "ATTACH TABLE $TABLE_KAFKA_HISTORY"
+ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+  --query "ATTACH TABLE $TABLE_KAFKA_HISTORY" 2>&1) || \
+echo "$ERR" | grep -q "already exists" || \
+{ echo "ATTACH failed: $ERR" >&2; exit 1; }
 
 # Выключить
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "DETACH TABLE $TABLE_KAFKA_HISTORY"
+ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+  --query "DETACH TABLE $TABLE_KAFKA_HISTORY" 2>&1) || \
+echo "$ERR" | grep -qE "does.?n.?t exist" || \
+{ echo "DETACH failed: $ERR" >&2; exit 1; }
 ```
 
 **Проверка состояния:**
 
 ```bash
 docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-SELECT name, engine
+-- Таблицы pipeline (detached не отображаются)
+SELECT name, engine, total_rows, total_bytes
 FROM system.tables
 WHERE database = currentDatabase()
   AND name IN ('$TABLE_KAFKA_RT', '$TABLE_KAFKA_HISTORY',
                '$MV_KAFKA_RT', '$MV_KAFKA_HISTORY',
                '$MV_OHLC', '$TABLE_QUOTES', '$TABLE_OHLC')
-ORDER BY name;
+ORDER BY name
+FORMAT PrettyCompactMonoBlock;
+
+-- Kafka consumers: offset'ы, статус, ошибки
+SELECT
+    table,
+    assignments.topic,
+    assignments.partition_id,
+    assignments.current_offset,
+    last_poll_time,
+    num_messages_read,
+    last_commit_time,
+    num_commits,
+    is_currently_used,
+    exceptions.time,
+    exceptions.text
+FROM system.kafka_consumers
+WHERE database = currentDatabase()
+FORMAT Vertical;
 CHSQL
+
+# Kafka-side: LAG по consumer groups
+docker exec -i $KAFKA_CONTAINER bash << KAFKA
+OPTS="--bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties"
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --describe --group $CG_RT
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --describe --group $CG_HISTORY
+KAFKA
 ```
 
-> Detached таблицы **не отображаются** в `system.tables`.
-> Если `kafka_quotes` нет в списке — потребление RT остановлено.
+> **Detached** таблицы **не отображаются** в `system.tables` — если `kafka_quotes` нет в списке, потребление RT остановлено.
+> **`system.kafka_consumers`** показывает только attached Kafka таблицы. `exceptions.text` содержит последние ошибки подключения к брокеру.
 
 ### Offset'ы сохраняются
 
@@ -440,66 +504,166 @@ CHSQL
 | `DROP TABLE` → `CREATE TABLE` (тот же `kafka_group_name`) | Сохраняются | Накопившиеся прочитаются |
 | Удаление consumer group из Kafka | **Сбрасываются** | Всё перечитается с начала (`auto.offset.reset=earliest`) |
 
----
+### Проверка pipeline (smoke test)
 
-## 4. reload_data — Перезагрузка истории
-
-Процедура замены исторических данных за диапазон через Kafka.
-
-### Предпосылки
-
-- OHLC MV (`mv_quotes_to_ohlc`) срабатывает на **каждый** INSERT в `quotes`, включая данные из Kafka
-- `AggregatingMergeTree` **мержит** агрегаты, а не заменяет — загрузка поверх существующих данных удвоит `volume`
-- Поэтому перед загрузкой нужно очистить и тики, и OHLC за перезагружаемый диапазон
+Сквозная проверка: включить потребители → сгенерировать тики → убедиться, что данные прошли через весь pipeline (Kafka → ClickHouse → OHLC).
 
 ```bash
 # ─── Параметры ───
-FROM='2026-02-15 10:00:00'
-TO='2026-02-15 13:00:00'
+FROM="$(date -u +%Y-%m-%d) 00:00:00"
+TO="$(date -u +'%Y-%m-%d %H:%M:%S')"
 SYMBOL=EURUSD
 
-# ─── 1. Остановить потребление ───
-docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-DETACH TABLE $TABLE_KAFKA_RT;
-DETACH TABLE $TABLE_KAFKA_HISTORY;
-CHSQL
+# ─── 1. Включить потребление ───
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "ATTACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -q "already exists" || \
+  { echo "ATTACH $TBL failed: $ERR" >&2; exit 1; }
+done
 
-# ─── 2. Загрузить исторические данные в Kafka ───
-# Файл data.jsonl — JSONEachRow, по одному тику на строку.
-# Тестовый файл: /boroda/data.jsonl
-#
-# Отправить в Kafka:
-cat data.jsonl | docker exec -i $KAFKA_CONTAINER /opt/kafka/bin/kafka-console-producer.sh \
+# ─── 2. Сгенерировать и отправить тики в Kafka (history) ───
+FROM_SEC=$(date -ud "$FROM" +%s)
+TO_SEC=$(date -ud "$TO" +%s)
+TICKS=$(( (TO_SEC - FROM_SEC) / 60 ))
+echo "Генерация $TICKS тиков ($SYMBOL, $FROM → $TO)..."
+
+for i in $(seq 0 $((TICKS - 1))); do
+  TS_MS=$(( (FROM_SEC + i * 60) * 1000 ))
+  SHIFT=$(( RANDOM % 100 ))
+  printf '{"symbol":"%s","bid":1.%05d,"ask":1.%05d,"ts_ms":%d}\n' \
+    "$SYMBOL" $((11540 + SHIFT)) $((11560 + SHIFT)) "$TS_MS"
+done | docker exec -i $KAFKA_CONTAINER /opt/kafka/bin/kafka-console-producer.sh \
   --bootstrap-server localhost:9092 \
   --topic $TOPIC_HISTORY \
   --producer.config /etc/kafka/client.properties
 
-# ─── 3. Очистить диапазон в ClickHouse ───
+# ─── 3. Дождаться загрузки ───
+sleep 5
+
+# ─── 4. Статус: Kafka consumer groups ───
+echo "=== Kafka consumer groups ==="
+docker exec -i $KAFKA_CONTAINER bash << KAFKA
+OPTS="--bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties"
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --describe --group $CG_RT
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --describe --group $CG_HISTORY
+KAFKA
+
+# ─── 5. Статус: ClickHouse consumers + таблицы ───
+echo "=== ClickHouse pipeline ==="
 docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-DETACH TABLE $MV_OHLC;
-DELETE FROM $TABLE_QUOTES WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL';
-DELETE FROM $TABLE_OHLC WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL';
-ATTACH TABLE $MV_OHLC;
+SELECT name, engine, total_rows, total_bytes
+FROM system.tables
+WHERE database = currentDatabase()
+  AND name IN ('$TABLE_KAFKA_RT', '$TABLE_KAFKA_HISTORY',
+               '$MV_KAFKA_RT', '$MV_KAFKA_HISTORY',
+               '$MV_OHLC', '$TABLE_QUOTES', '$TABLE_OHLC')
+ORDER BY name
+FORMAT PrettyCompactMonoBlock;
+
+SELECT
+    table,
+    assignments.topic,
+    assignments.current_offset,
+    num_messages_read,
+    is_currently_used,
+    exceptions.text
+FROM system.kafka_consumers
+WHERE database = currentDatabase()
+FORMAT Vertical;
 CHSQL
 
-# ─── 4. Включить потребление истории ───
-docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
-  --query "ATTACH TABLE $TABLE_KAFKA_HISTORY"
+# ─── 6. Данные: quotes + ohlc ───
+echo "=== Данные ==="
+docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
+SELECT symbol, count() AS ticks, min(ts) AS first, max(ts) AS last
+FROM $TABLE_QUOTES FINAL
+GROUP BY symbol ORDER BY symbol;
 
-# ─── 5. Дождаться загрузки (LAG=0) ───
+SELECT tf, count() AS candles
+FROM $TABLE_OHLC
+GROUP BY tf ORDER BY tf;
+CHSQL
+
+# ─── 7. Выключить потребление ───
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "DETACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -qE "does.?n.?t exist" || \
+  { echo "DETACH $TBL failed: $ERR" >&2; exit 1; }
+done
+```
+
+---
+
+## 4. history_reload — Перезагрузка истории
+
+Замена исторических данных за диапазон **без остановки потребления**. RT-тики продолжают поступать по всем символам.
+
+### Почему не нужно останавливать потребители
+
+| Факт | Следствие |
+|------|-----------|
+| `DELETE` — lightweight, помечает строки | Не блокирует INSERT |
+| MV срабатывает только на `INSERT` | DELETE не дублирует агрегаты |
+| RT-тики имеют текущий timestamp | Не пересекаются с историческим диапазоном |
+
+### Предпосылки
+
+- `AggregatingMergeTree` **мержит** агрегаты — загрузка поверх существующих данных удвоит `volume`, поэтому перед загрузкой нужно очистить и тики, и OHLC
+
+> **Нюанс:** между DELETE и моментом, когда новые данные пройдут через pipeline, в OHLC будет кратковременный пробел за очищенный диапазон.
+
+```bash
+# ─── Параметры ───
+# Перезагрузить: весь вчерашний день + первая половина сегодняшних данных
+TODAY=$(date -u +%Y-%m-%d)
+YESTERDAY=$(date -ud "$TODAY - 1 day" +%Y-%m-%d)
+NOW_SEC=$(date -u +%s)
+TODAY_START_SEC=$(date -ud "$TODAY 00:00:00" +%s)
+MID_SEC=$(( (TODAY_START_SEC + NOW_SEC) / 2 ))
+
+FROM="$YESTERDAY 00:00:00"
+TO=$(date -ud @$MID_SEC +'%Y-%m-%d %H:%M:%S')
+SYMBOL=EURUSD
+
+# ─── 1. Включить потребление (если выключено) ───
+ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+  --query "ATTACH TABLE $TABLE_KAFKA_HISTORY" 2>&1) || \
+echo "$ERR" | grep -q "already exists" || \
+{ echo "ATTACH $TABLE_KAFKA_HISTORY failed: $ERR" >&2; exit 1; }
+
+# ─── 2. Очистить диапазон в quotes и ohlc ───
+docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
+DELETE FROM $TABLE_QUOTES WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL';
+DELETE FROM $TABLE_OHLC WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL';
+CHSQL
+
+# ─── 3. Сгенерировать и загрузить тестовые данные в Kafka ───
+# 1 тик в минуту, bid ~1.11540 с random walk, ask = bid + 0.00020
+FROM_SEC=$(date -ud "$FROM" +%s)
+TO_SEC=$(date -ud "$TO" +%s)
+TICKS=$(( (TO_SEC - FROM_SEC) / 60 ))
+echo "Генерация $TICKS тиков ($SYMBOL, $FROM → $TO)..."
+
+for i in $(seq 0 $((TICKS - 1))); do
+  TS_MS=$(( (FROM_SEC + i * 60) * 1000 ))
+  SHIFT=$(( RANDOM % 100 ))
+  printf '{"symbol":"%s","bid":1.%05d,"ask":1.%05d,"ts_ms":%d}\n' \
+    "$SYMBOL" $((11540 + SHIFT)) $((11560 + SHIFT)) "$TS_MS"
+done | docker exec -i $KAFKA_CONTAINER /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic $TOPIC_HISTORY \
+  --producer.config /etc/kafka/client.properties
+
+# ─── 4. Дождаться загрузки (LAG=0) ───
 echo "Ожидание загрузки данных... (LAG должен стать 0)"
 sleep 5
 docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
   --describe --group $CG_HISTORY
 
-# ─── 6. Выключить history, включить RT ───
-docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-DETACH TABLE $TABLE_KAFKA_HISTORY;
-ATTACH TABLE $TABLE_KAFKA_RT;
-CHSQL
-
-# ─── 7. Проверить результат ───
+# ─── 5. Проверить результат ───
 docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
 SELECT symbol, count(), min(ts), max(ts)
 FROM $TABLE_QUOTES FINAL
@@ -514,6 +678,85 @@ CHSQL
 ```
 
 > **Без фильтра по символу:** убрать `AND symbol = '$SYMBOL'` из DELETE — будут перезалиты все символы.
+
+---
+
+## 5. rebuild_ohlc — Перерасчёт OHLC из quotes
+
+Пересчёт OHLC свечей из существующих тиков — по сути ручной запуск того же SELECT, что выполняет `mv_quotes_to_ohlc`, но с произвольными фильтрами.
+
+### Когда использовать
+
+- Исправили тики в `quotes` и нужно пересчитать свечи
+- Повреждены/удалены данные в `ohlc`, а тики на месте
+- Нужно пересчитать только один символ или таймфрейм
+- Полный ребилд всех свечей с нуля
+
+```bash
+# ─── Параметры (тот же период, что в history_reload) ───
+TODAY=$(date -u +%Y-%m-%d)
+YESTERDAY=$(date -ud "$TODAY - 1 day" +%Y-%m-%d)
+NOW_SEC=$(date -u +%s)
+TODAY_START_SEC=$(date -ud "$TODAY 00:00:00" +%s)
+MID_SEC=$(( (TODAY_START_SEC + NOW_SEC) / 2 ))
+
+FROM="$YESTERDAY 00:00:00"
+TO=$(date -ud @$MID_SEC +'%Y-%m-%d %H:%M:%S')
+SYMBOL=EURUSD
+
+# ─── 0. Убедиться, что Kafka-потребители включены ───
+for TBL in $TABLE_KAFKA_RT $TABLE_KAFKA_HISTORY; do
+  ERR=$(docker exec $CH_CONTAINER clickhouse-client --user "$CH_USER" --password "$CH_PASSWORD" \
+    --query "ATTACH TABLE $TBL" 2>&1) || \
+  echo "$ERR" | grep -q "already exists" || \
+  { echo "ATTACH $TBL failed: $ERR" >&2; exit 1; }
+done
+
+# ─── 1. Испортить OHLC (удалить 5m и 15m свечи за период) ───
+docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
+DELETE FROM $TABLE_OHLC
+WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL'
+  AND tf IN ('5m', '15m');
+
+SELECT tf, count() AS candles FROM $TABLE_OHLC
+WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL'
+GROUP BY tf ORDER BY tf;
+CHSQL
+
+echo ""
+echo "^^^ 5m и 15m должны отсутствовать"
+echo ""
+
+# ─── 2. Пересчёт ───
+docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
+DELETE FROM $TABLE_OHLC WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL';
+
+INSERT INTO $TABLE_OHLC
+SELECT tf, symbol,
+    fromUnixTimestamp64Milli(intDiv(toUnixTimestamp64Milli(ts), interval_ms) * interval_ms) AS bucket,
+    argMinState(bid, ts) AS open, maxState(bid) AS high,
+    minState(bid) AS low, argMaxState(bid, ts) AS close, countState() AS volume
+FROM $TABLE_QUOTES FINAL
+ARRAY JOIN
+    [1000, 60000, 300000, 900000, 1800000, 3600000,
+     14400000, 86400000, 604800000, 31536000000] AS interval_ms,
+    ['1s', '1m', '5m', '15m', '30m', '1h',
+     '4h', '1d', '1w', '1y'] AS tf
+WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL'
+GROUP BY tf, symbol, bucket;
+CHSQL
+
+# ─── 3. Проверить — 5m и 15m должны вернуться ───
+docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
+SELECT tf, count() AS candles FROM $TABLE_OHLC
+WHERE ts >= '$FROM' AND ts < '$TO' AND symbol = '$SYMBOL'
+GROUP BY tf ORDER BY tf;
+CHSQL
+```
+
+> **Почему без DETACH MV?** DETACH `mv_quotes_to_ohlc` на время rebuild'а предотвратил бы задвоение `volume` (MV + ручной INSERT для одного бакета). Но MV не умеет «догонять» — тики, поступившие в `quotes` пока MV detached, никогда не попадут в OHLC. На практике риск задвоения минимален: RT-тики имеют текущий timestamp и не попадают в исторический диапазон rebuild'а.
+>
+> **Полный ребилд:** убрать WHERE из DELETE и INSERT (или заменить DELETE на `TRUNCATE TABLE $TABLE_OHLC`).
 
 ---
 
@@ -659,34 +902,6 @@ ORDER BY ts DESC LIMIT 5;
 
 ---
 
-## Полный ребилд OHLC
-
-Пересчитать все OHLC свечи из существующих тиков (без потери тиков):
-
-```bash
-docker exec -i $CH_CONTAINER clickhouse-client -n --user "$CH_USER" --password "$CH_PASSWORD" << CHSQL
-DETACH TABLE $MV_OHLC;
-TRUNCATE TABLE $TABLE_OHLC;
-
-INSERT INTO $TABLE_OHLC
-SELECT tf, symbol,
-    fromUnixTimestamp64Milli(intDiv(toUnixTimestamp64Milli(ts), interval_ms) * interval_ms) AS bucket,
-    argMinState(bid, ts) AS open, maxState(bid) AS high,
-    minState(bid) AS low, argMaxState(bid, ts) AS close, countState() AS volume
-FROM $TABLE_QUOTES FINAL
-ARRAY JOIN
-    [1000, 60000, 300000, 900000, 1800000, 3600000,
-     14400000, 86400000, 604800000, 31536000000] AS interval_ms,
-    ['1s', '1m', '5m', '15m', '30m', '1h',
-     '4h', '1d', '1w', '1y'] AS tf
-GROUP BY tf, symbol, bucket;
-
-ATTACH TABLE $MV_OHLC;
-CHSQL
-```
-
----
-
 ## Управление Kafka-топиками
 
 ```bash
@@ -745,19 +960,11 @@ DROP TABLE IF EXISTS $TABLE_OHLC;
 CHSQL
 
 # ─── Kafka: удалить топики и consumer groups ───
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --topic $TOPIC_RT 2>/dev/null || true
-
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --topic $TOPIC_HISTORY 2>/dev/null || true
-
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --group $CG_RT 2>/dev/null || true
-
-docker exec $KAFKA_CONTAINER /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties \
-  --delete --group $CG_HISTORY 2>/dev/null || true
+docker exec -i $KAFKA_CONTAINER bash << KAFKA
+OPTS="--bootstrap-server localhost:9092 --command-config /etc/kafka/client.properties"
+/opt/kafka/bin/kafka-topics.sh \$OPTS --delete --topic $TOPIC_RT 2>/dev/null || true
+/opt/kafka/bin/kafka-topics.sh \$OPTS --delete --topic $TOPIC_HISTORY 2>/dev/null || true
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --delete --group $CG_RT 2>/dev/null || true
+/opt/kafka/bin/kafka-consumer-groups.sh \$OPTS --delete --group $CG_HISTORY 2>/dev/null || true
+KAFKA
 ```
